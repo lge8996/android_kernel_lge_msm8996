@@ -1,0 +1,49 @@
+
+qcom,LGE_BLM02_8200mAh {
+	/* #3928642_Huaqin_ZQ6016_ATL_8200mAH_PMI8996_averaged_MasterSlave_Apr3th2019*/
+	qcom,max-voltage-uv = <4350000>;
+	qcom,nom-batt-capacity-mah = <8200>;
+	qcom,batt-id-kohm = <75>;
+	qcom,battery-beta = <4250>;
+	qcom,battery-type = "LGE_BLM02_8200mAh";
+	qcom,chg-rslow-comp-c1 = <2966432>;
+	qcom,chg-rslow-comp-c2 = <3642399>;
+	qcom,chg-rs-to-rslow = <436276>;
+	qcom,chg-rslow-comp-thr = <0x99>;
+	qcom,checksum = <0x6596>;
+	qcom,gui-version = "PMI8950GUI - 2.0.0.16";
+	qcom,fg-profile-data = [
+		 E6 83 94 7C 
+		 85 80 E0 75 
+		 37 83 4B 73 
+		 7B 7F 0F 80 
+		 C1 81 01 A0 
+		 F1 BE 1A D0 
+		 7F 12 E7 83 
+		 62 7C 75 80 
+		 01 76 2B 83 
+		 37 7A 23 8C 
+		 5A 88 20 82 
+		 A9 9A 55 BE 
+		 31 D0 6A 10 
+		 38 20 1D 58 
+		 CE 6E B4 F9 
+		 1F 3D E5 3D 
+		 E1 39 00 00 
+		 B0 47 F7 41 
+		 CE 44 00 00 
+		 00 00 00 00 
+		 00 00 00 00 
+		 10 68 AB 62 
+		 19 79 B3 90 
+		 EB 77 17 70 
+		 C8 6F FD 7A 
+		 95 76 04 6A 
+		 1C 74 EB A1 
+		 23 63 60 14 
+		 5E A0 71 0C 
+		 28 00 FF 36 
+		 F0 11 30 03 
+		 00 00 00 0C 
+	];
+};

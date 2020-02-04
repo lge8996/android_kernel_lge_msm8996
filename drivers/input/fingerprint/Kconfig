@@ -1,0 +1,6 @@
+#
+# Fingerprint drivers configuration
+#
+
+source "drivers/input/fingerprint/canvasbio/Kconfig"
+source "drivers/input/fingerprint/et523/Kconfig"

@@ -1,0 +1,265 @@
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&tlmm {
+	pmx_mdss: pmx_mdss {
+		/* lcd_reset */
+		mdss_dsi_active: mdss_dsi_active {
+			mux {
+				pins = "gpio8";
+				function = "gpio";
+			};
+
+			pmx_mdss {
+				pins = "gpio8";
+				drive-strength = <8>; /* 8 mA */
+				bias-disable = <0>; /* no pull */
+				output-high;
+			};
+		};
+		mdss_dsi_suspend: mdss_dsi_suspend {
+			mux {
+				pins = "gpio8";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio8";
+				drive-strength = <2>; /* 2 mA */
+				bias-pull-down; /* pull down */
+			};
+		};
+
+		mdss_disp_iris_reset_active: mdss_disp_iris_reset_active {
+				config {
+					pins = "gpio38";
+					drive-strength = <8>; /* 8 mA */
+					bias-disable; /* no pull */
+				};
+			};
+
+			mdss_disp_iris_reset_suspend: mdss_disp_iris_reset_suspend {
+				config {
+					pins = "gpio38";
+					drive-strength = <2>; /* 2 mA */
+					bias-pull-down; /* pull down */
+				};
+			};
+	};
+
+    /* pin set for usb type-c controller Richtek (RT1711H) */
+    rt1711 {
+            rt1711_int_active: rt1711_int_active {
+                mux {
+                    pins = "gpio119";
+                    function = "gpio";
+                };
+
+                config {
+                    pins = "gpio119";
+                    driver-strength = <2>;
+                    bias-pull-up;
+                };
+
+            };
+
+            rt1711_int_sleep: rt1711_int_sleep {
+                mux {
+                    pins = "gpio119";
+                    function = "gpio";
+                };
+
+                config {
+                    pins = "gpio119";
+                    driver-strength = <2>;
+                    output-low;		/* Output Low */
+                };
+
+            };
+
+			redriver_sel_active: redriver_sel_active {
+				mux {
+					pins = "gpio96";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio96";
+					driver-strength = <2>;
+					bias-disable;		/* NO PULL */
+				};
+			};
+
+			redriver_sel_sleep: redriver_sel_sleep {
+				mux {
+					pins = "gpio96";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio96";
+					driver-strength = <2>;
+					output-low;		/* Output Low */
+				};
+			};
+    };
+
+	/* pin set for HallIC */
+	hallic_gpio {
+			label = "hallic_gpio";
+			hallic_gpio_active: hallic_gpio_active {
+					hallic_gpio {
+							pins = "gpio123";
+							drive-strength = <2>;
+							bias-pull-up;
+					};
+			};
+			hallic_gpio_suspend: hallic_gpio_suspend {
+					hallic_gpio {
+							pins = "gpio123";
+							drive-strength = <2>;
+							bias-pull-up;
+					};
+			 };
+	};
+
+	pmx_ts_reset {
+		ts_reset_active: ts_reset_active {
+			mux {
+				pins = "gpio89";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio89";
+				drive-strength = <8>;
+				bias-pull-up;
+			};
+		};
+
+		ts_reset_suspend: ts_reset_suspend {
+			mux {
+				pins = "gpio89";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio89";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+
+	pmx_ts_int {
+		ts_int_active: ts_int_active {
+			mux {
+				pins = "gpio125";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio125";
+				drive-strength = <8>;
+				bias-pull-up;
+			};
+		};
+
+		ts_int_suspend: ts_int_suspend {
+			mux {
+				pins = "gpio125";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio125";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+
+	pmx_ts_release {
+		ts_release: ts_release {
+			mux {
+				pins = "gpio125", "gpio89";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio125", "gpio89";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+
+       i2c_6 {
+               i2c_6_default: i2c_6_default {
+                       mux {
+                               pins = "gpio27", "gpio28";
+                               function = "blsp_i2c6";
+                       };
+
+                       config {
+                               pins = "gpio27", "gpio28";
+                               drive-strength = <2>;
+                               bias-disable;
+                       };
+               };
+	};
+
+	atmf04_int_pin {
+		atmf04_int_active: atmf04_int_active {
+			mux {
+					pins = "gpio34", "gpio118";
+					function = "gpio";
+			};
+			config {
+					pins = "gpio34", "gpio118";
+					drive-strength = <6>;
+					bias-pull-up;
+			};
+		};
+		atmf04_int_suspend: atmf04_int_suspend {
+			mux {
+					pins = "gpio34", "gpio118";
+					function = "gpio";
+			};
+			config {
+					pins = "gpio34", "gpio118";
+					drive-strength = <6>;
+					bias-pull-up;
+			};
+		};
+	};
+
+	tert_mi2s_sd1 {
+		tert_mi2s_sd1_sleep: tert_mi2s_sd1_sleep {
+			mux {
+				pins = "gpio78";
+				function = "ter_mi2s";
+			};
+			config {
+				pins = "gpio78";
+				drive-strength = <2>;   /* 2 mA */
+				bias-pull-down;         /* PULL DOWN */
+			};
+		};
+		tert_mi2s_sd1_active: tert_mi2s_sd1_active {
+			mux {
+				pins = "gpio78";
+				function = "ter_mi2s";
+			};
+			config {
+				pins = "gpio78";
+				drive-strength = <8>;   /* 8 mA */
+				bias-disable;           /* NO PULL */
+			};
+		};
+	};
+};

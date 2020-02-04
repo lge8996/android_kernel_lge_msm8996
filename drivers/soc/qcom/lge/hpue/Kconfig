@@ -1,0 +1,10 @@
+menu "Boost IC driver for supporting HPUE"
+
+config HPUE_DETECT
+        bool "CONFIG_HPUE_DETECT"
+        default n
+	help
+	  This is option enabling Boost IC driver for supporting HPUE
+	  on TMUS, MPCS, and Sprint operators.
+
+endmenu

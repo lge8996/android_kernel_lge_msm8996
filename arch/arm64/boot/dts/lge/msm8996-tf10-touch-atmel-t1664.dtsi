@@ -1,0 +1,44 @@
+/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2 and
+* only version 2 as published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+* GNU General Public License for more details.
+*/
+
+&i2c_12{    /* BLSP-2 QUP6 */
+	atmel_t1664@4a {
+		compatible = "atmel,t1664";
+		status = "ok";
+		reg = <0x4a>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <125 0x2>;							/*interrupt pin number*/
+
+		pinctrl-names = "pmx_ts_active","pmx_ts_suspend";       /*Touch GPIO pin name setting*/
+		pinctrl-0 = <&ts_int_active &ts_reset_active>;          /*Touch GPIO pin active setting*/
+		pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;        /*Touch GPIO pin suspend setting*/
+
+		atmel,avdd-gpio = <&tlmm 121 0x00>;	//GPIO[121] TOUCH_AVDD_EN
+		atmel,dvdd-gpio = <&tlmm 10 0x00>;	//GPIO[010] TOUCH_DVDD_EN
+		atmel,vio-gpio = <&tlmm 69 0x00>;	//GPIO[112] TOUCH_1V8_LDO_EN(VIO) --> LCD_3V3_LDO_EN
+		atmel,reset-gpio = <&tlmm 89 0x00>;
+		atmel,irq-gpio = <&tlmm 125 0x00>;
+		atmel,numtouch = <10>;							/*multi-touch count*/
+		atmel,irqflags = <0x00000002>;
+		atmel,t15_num_keys = <0>;
+		atmel,fw_name = "touch/tf10/tf10_v1.05.img";
+		atmel,knock_on_type = <1>;
+		atmel,global_access_pixel = <0>;
+		atmel,use_mfts = <1>; // Enable for CoF type only
+		atmel,lcd_x = <1200>;
+		atmel,lcd_y = <1920>;
+		atmel,butt_check_enable = <0>;
+		atmel,use_debug_reason = <1>;
+		atmel,use_lpwg_test = <1>;
+		atmel,hide_coordinate = <0>;
+	};
+};

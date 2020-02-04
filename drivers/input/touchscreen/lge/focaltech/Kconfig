@@ -1,0 +1,7 @@
+#
+# LGE touch core configuration
+#
+if INPUT_TOUCHSCREEN
+
+source "drivers/input/touchscreen/lge/focaltech/ft5726/Kconfig"
+endif

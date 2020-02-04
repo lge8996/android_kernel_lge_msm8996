@@ -1,0 +1,16 @@
+#
+# Input device configuration
+#
+
+if INPUT_FINGERPRINT
+
+config EGISTEC_FINGERPRINT
+    tristate "Egistec fp platform device"
+	depends on SPI_MASTER
+    default n
+    help
+      If say Y here to use Egistec fingerprint driver.
+
+      If unsure, say N.
+
+endif

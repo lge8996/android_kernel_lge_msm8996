@@ -1,0 +1,27 @@
+config LGE_PM_VENEER_PSY
+	bool "Apply LGE veneer psy"
+	depends on LGE_PM
+	default n
+	help
+	  Say Y here enable support lge veneer psy
+
+config LGE_PM_CCD
+	bool "support Charging Control Daemon"
+	depends on LGE_PM
+	default n
+	help
+	  Say Y to using Charging Control Daemon(CCD)
+
+config LGE_PM_BRINGUP
+	bool "support LGE PM Bringup"
+	depends on LGE_PM
+	default n
+	help
+	  Say Y to using LGE PM Bringup
+
+config LGE_PM_BATTID_REDETECTION
+	bool "Apply battery id re-detection"
+	depends on LGE_PM_VENEER_PSY
+	default n
+	help
+	  Say Y here enable support battery re-detection

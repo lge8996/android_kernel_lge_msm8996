@@ -1,0 +1,150 @@
+/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "../dsi-panel-hx8279d-no-bridge-wuxga-video.dtsi"
+#include "../dsi-panel-hx8279d-wuxga-video.dtsi"
+
+&mdss_mdp {
+	qcom,mdss-pref-prim-intf = "dsi";
+	qcom,mdss-has-source-split;
+};
+
+&mdss_dsi0 {
+	qcom,dsi-pref-prim-pan = <&dsi_hx8279d_no_bridge_wuxga_video>;
+	pinctrl-names = "mdss_default", "mdss_sleep";
+	qcom,platform-reset-gpio = <&tlmm 8 0>;
+	qcom,platform-iris-reset-gpio = <&tlmm 38 0>;
+	lge,extra-gpio-names = "lcd_ldo_en";
+	lge,gpio-lcd_ldo_en = <&tlmm 85 0>;
+	lab-supply = <&lab_regulator>;
+	ibb-supply = <&ibb_regulator>;
+/* move to main soc dtb */
+//	/delete-property/qcom,null-insertion-enabled;
+
+};
+
+&mdss_dsi1 {
+	status = "disabled";
+};
+/* move to main soc dtb */
+//&mdss_dsi0_pll {
+//		/delete-property/ memory-region;
+//};
+
+&mdss_dsi {
+	hw-config = "single_dsi";
+};
+
+&dsi_hx8279d_wuxga_video {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-blex-pmic-control-type = "bl_ctrl_lge";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,cont-splash-enabled;
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+};
+
+&dsi_hx8279d_no_bridge_wuxga_video {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-blex-pmic-control-type = "bl_ctrl_lge";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,cont-splash-enabled;
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+};
+
+&spmi_bus {
+	qcom,pmi8994@3 {
+		labibb: qpnp-labibb-regulator {
+			ibb_regulator: qcom,ibb@dc00 {
+				qcom,qpnp-ibb-init-voltage = <5500000>;
+				qcom,qpnp-ibb-init-lcd-voltage = <5500000>;
+			};
+			lab_regulator: qcom,lab@de00 {
+				qcom,qpnp-lab-init-voltage = <5500000>;
+				qcom,qpnp-lab-init-lcd-voltage = <5500000>;
+			};
+		};
+		qcom,leds@d800 {
+			qcom,fs-curr-ua = <20000>;
+			qcom,ibb-pwrup-dly = <1>;
+			qcom,led-strings-list = [00 01 02 03];
+			qcom,switch-freq-khz = <800>;
+			qcom,ilim-ma = <1420>;
+		};
+	};
+};
+
+&ibb_regulator {
+	qcom,qpnp-ibb-discharge-resistor = <32>;
+};
+
+&labibb {
+	status = "ok";
+	qcom,qpnp-labibb-mode = "lcd";
+};
+
+&soc {
+	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		qcom,panel-supply-entry@0 {
+			reg = <0>;
+			qcom,supply-name = "vddio";
+			qcom,supply-min-voltage = <1800000>;
+			qcom,supply-max-voltage = <1800000>;
+			qcom,supply-enable-load = <62000>;
+			qcom,supply-disable-load = <80>;
+		};
+
+		qcom,panel-supply-entry@1 {
+			reg = <1>;
+			qcom,supply-name = "lab";
+			qcom,supply-min-voltage = <4600000>;
+			qcom,supply-max-voltage = <6000000>;
+			qcom,supply-enable-load = <100000>;
+			qcom,supply-disable-load = <100>;
+			qcom,supply-post-off-sleep = <15>;
+		};
+
+		qcom,panel-supply-entry@2 {
+			reg = <2>;
+			qcom,supply-name = "ibb";
+			qcom,supply-min-voltage = <4600000>;
+			qcom,supply-max-voltage = <6000000>;
+			qcom,supply-enable-load = <100000>;
+			qcom,supply-disable-load = <100>;
+			qcom,supply-post-on-sleep = <5>;
+		};
+	};
+};
+
+&soc {
+	gpio_keys {
+		compatible = "gpio-keys";
+		input-name = "gpio-keys";
+
+		pinctrl-names = "tlmm_gpio_key_active","tlmm_gpio_key_suspend";
+		pinctrl-0 = <&hallic_gpio_active>;
+		pinctrl-1 = <&hallic_gpio_suspend>;
+
+		hall_ic {
+			label = "hall_ic";
+			gpios = <&tlmm 123 0x1>;
+			linux,input-type = <5>;
+			linux,code = <222>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
+	};
+};

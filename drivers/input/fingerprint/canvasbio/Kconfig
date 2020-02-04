@@ -1,0 +1,22 @@
+#
+# Input device configuration
+#
+
+if INPUT_FINGERPRINT
+
+config CANVASBIO_FINGERPRINT
+    tristate "Canvasbio fp platform device"
+	depends on SPI_MASTER
+    help
+      If say Y here to use CanvasBio fingerprint driver.
+
+      If unsure, say N.
+
+config CANVASBIO_FINGERPRINT_NAVIGATION
+    tristate "Canvasbio fp navigation device"
+	depends on CANVASBIO_FINGERPRINT
+    default y
+    help
+      If say Y here, you can use fingerprint navigation.
+
+endif

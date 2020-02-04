@@ -1,0 +1,1 @@
+obj-$(CONFIG_HPUE_DETECT) += tps61280.o

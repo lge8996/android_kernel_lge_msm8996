@@ -1,0 +1,31 @@
+/*
+ * This software is contributed or developed by CANVASBIO Corporation.
+ * (C) 2019 CANVASBIO Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&soc {
+    btp {
+        status = "okay";
+        compatible = "cb,btp";
+
+        interrupt-parent = <&tlmm>;
+        interrupts = <121 0x00>;
+
+        /* GPIO39 : FP_AVDD_EN / GPIO106 : FP_VIO_EN */
+        fp-vdd-en = <&tlmm 39 0x00>;
+        fp-vddio-en = <&tlmm 106 0x00>;
+
+        /* GPIO50 : FP_RESET / GPIO121 : FP_INT */
+        fpreset-gpio = <&tlmm 50 0x00>;
+        fpint-gpio = <&tlmm 121 0x00>;
+    };
+};
