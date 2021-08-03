@@ -20,12 +20,36 @@
 #include "msm_camera_i2c.h"
 #include "msm_camera_dt_util.h"
 #include "msm_camera_io_util.h"
-#include "msm_sd.h"
 
+//#define OIS_HALL_READ_WORK_Q
 #define DEFINE_MSM_MUTEX(mutexname) \
 	static struct mutex mutexname = __MUTEX_INITIALIZER(mutexname)
 
 #define	MSM_OIS_MAX_VREGS (10)
+
+#ifdef CONFIG_LG_OIS
+	//#define MSM_OIS_DEBUG
+	#undef CDBG
+	#ifdef MSM_OIS_DEBUG
+	#define CDBG(fmt, args...) pr_err(fmt, ##args)
+	#else
+	#define CDBG(fmt, args...) pr_debug(fmt, ##args)
+	#endif
+
+	//OIS ERROR CODE
+	#define OIS_SUCCESS 0
+	#define OIS_FAIL    -1
+	#define OIS_INIT_OLD_MODULE		1
+	#define OIS_INIT_NOT_SUPPORTED  -2
+	#define OIS_INIT_CHECKSUM_ERROR -3
+	#define OIS_INIT_EEPROM_ERROR   -4
+	#define OIS_INIT_I2C_ERROR      -5
+	#define OIS_INIT_TIMEOUT		-6
+	#define OIS_INIT_LOAD_BIN_ERROR -7
+	#define OIS_INIT_NOMEM			-8
+	#define OIS_INIT_GYRO_ADJ_FAIL	 2
+	#define OIS_INIT_SRV_GAIN_FAIL	 4
+#endif
 
 struct msm_ois_ctrl_t;
 
@@ -35,49 +59,14 @@ enum msm_ois_state_t {
 	OIS_OPS_INACTIVE,
 	OIS_DISABLE_STATE,
 };
-#if 1// CONFIG_LG_OIS
-//#define MSM_OIS_DEBUG
-#undef CDBG
-#ifdef MSM_OIS_DEBUG
-#define CDBG(fmt, args...) pr_err(fmt, ##args)
-#else
-#define CDBG(fmt, args...) pr_debug(fmt, ##args)
-#endif
 
-//OIS ERROR CODE
-#define OIS_SUCCESS 0
-#define OIS_FAIL    -1
-#define OIS_INIT_OLD_MODULE		1
-#define OIS_INIT_NOT_SUPPORTED  -2
-#define OIS_INIT_CHECKSUM_ERROR -3
-#define OIS_INIT_EEPROM_ERROR   -4
-#define OIS_INIT_I2C_ERROR      -5
-#define OIS_INIT_TIMEOUT		-6
-#define OIS_INIT_LOAD_BIN_ERROR -7
-#define OIS_INIT_NOMEM			-8
-#define OIS_INIT_GYRO_ADJ_FAIL	 2
-#define OIS_INIT_SRV_GAIN_FAIL	 4
-
+#ifdef CONFIG_LG_OIS
 enum ois_mode_t {
 	OIS_MODE_PREVIEW_CAPTURE,
 	OIS_MODE_VIDEO,
 	OIS_MODE_CAPTURE,
 	OIS_MODE_CENTERING_ONLY,
 	OIS_MODE_CENTERING_OFF
-};
-#endif
-
-
-struct msm_ois_vreg {
-	struct camera_vreg_t *cam_vreg;
-	void *data[MSM_OIS_MAX_VREGS];
-	int num_vreg;
-};
-
-struct msm_ois_board_info {
-	char ois_name[MAX_OIS_NAME_SIZE];
-	uint32_t i2c_slaveaddr;
-	struct msm_ois_opcode opcode;
 };
 
 enum ois_pwm_mode_t {
@@ -89,8 +78,6 @@ enum ois_pwm_mode_t {
 	OIS_IMG_SENSOR_REG_F,
 	OIS_IMG_SENSOR_REG_G,
 	OIS_IMG_SENSOR_REG_H,
-	OIS_IMG_SENSOR_REG_I,
-	OIS_IMG_SENSOR_REG_J,
 };
 
 struct msm_ois_func_tbl {
@@ -110,7 +97,22 @@ struct msm_ois_func_tbl {
 		struct msm_ois_set_info_t *);
 	int ois_cur_mode;
 };
+struct msm_ois {
+	struct msm_ois_func_tbl func_tbl;
+};
+#endif
 
+struct msm_ois_vreg {
+	struct camera_vreg_t *cam_vreg;
+	void *data[MSM_OIS_MAX_VREGS];
+	int num_vreg;
+};
+
+struct msm_ois_board_info {
+	char ois_name[MAX_OIS_NAME_SIZE];
+	uint32_t i2c_slaveaddr;
+	struct msm_ois_opcode opcode;
+};
 
 struct msm_ois_ctrl_t {
 	struct i2c_driver *i2c_driver;
@@ -132,13 +134,21 @@ struct msm_ois_ctrl_t {
 	struct msm_camera_gpio_conf *gconf;
 	struct msm_pinctrl_info pinctrl_info;
 	uint8_t cam_pinctrl_status;
-	struct msm_ois_board_info *oboard_info;
 
-//LG OIS
+#ifdef CONFIG_LG_OIS
 	struct msm_camera_i2c_client i2c_eeprom_client;
 	struct msm_ois_func_tbl *func_tbl;
 	uint16_t sid_ois;
-//~LG OIS
+
+#ifdef OIS_HALL_READ_WORK_Q
+	struct work_struct ois_work;
+	struct workqueue_struct *work_thread;
+	uint8_t exit_workqueue;
+	uint8_t pause_workqueue;
+	uint8_t wq_init_success;
+#endif
+#endif
+	struct msm_ois_board_info *oboard_info;
 };
 
 #endif

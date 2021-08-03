@@ -31,10 +31,7 @@
 		qcom,dsi-pll-ssc-mode = "down-spread";
 
 		/* Memory region for passing dynamic refresh pll codes */
-		/* lge do not use
 		memory-region = <&dfps_data_mem>;
-		*/
-
 
 		qcom,platform-supply-entries {
 			#address-cells = <1>;

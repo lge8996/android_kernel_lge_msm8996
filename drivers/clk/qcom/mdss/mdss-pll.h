@@ -13,7 +13,7 @@
 #ifndef __MDSS_PLL_H
 #define __MDSS_PLL_H
 
-#include <linux/mdss_io_util.h>
+#include <linux/sde_io_util.h>
 #include <linux/clk-provider.h>
 #include <linux/io.h>
 #include <linux/clk.h>

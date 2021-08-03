@@ -49,10 +49,7 @@ obj-$(CONFIG_VIDEO_RENESAS_JPU) 	+= rcar_jpu.o
 obj-$(CONFIG_VIDEO_RENESAS_VSP1)	+= vsp1/
 
 obj-y	+= omap/
+obj-y	+= msm/
 
 obj-$(CONFIG_VIDEO_AM437X_VPFE)		+= am437x/
 
-obj-$(CONFIG_VIDEO_XILINX)		+= xilinx/
-
-ccflags-y += -I$(srctree)/drivers/media/i2c
-obj-y	+= msm/

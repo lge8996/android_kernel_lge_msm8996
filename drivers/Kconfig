@@ -214,4 +214,8 @@ source "drivers/sensors/Kconfig"
 
 source "drivers/tee/Kconfig"
 
+source "drivers/brcm_v4l2/Kconfig"
+
+source "drivers/tspdrv/Kconfig"
+
 endmenu

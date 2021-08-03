@@ -24,7 +24,7 @@
 #include <soc/qcom/lge/lge_cable_detection.h>
 #endif
 #include <linux/module.h>
-//#include <linux/power/lge_battery_id.h>
+#include <linux/power/lge_battery_id.h>
 #include <linux/lge_display_debug.h>
 #include "lge_mdss_display.h"
 
@@ -292,10 +292,23 @@ int lge_br_to_bl (struct msm_fb_data_type *mfd, int br_lvl)
 	if (ctrl_pdata->lge_extra.blmap_list_size)
 		bl_lvl = lge_panel_br_to_bl(ctrl_pdata, br_lvl);
 	else {
+#if defined(CONFIG_LGE_HIGH_LUMINANCE_MODE)
+		blmaptype = pinfo->hl_mode_on ? LGE_BLHL : LGE_BL;
+#else
 		blmaptype = LGE_BL;
+#endif
+
 		if (pinfo->blmap[blmaptype])
 			bl_lvl = pinfo->blmap[blmaptype][br_lvl];
+#if defined(CONFIG_LGE_DISPLAY_AOD_WITH_MIPI)
+		if (mfd->panel_info->aod_cur_mode == AOD_PANEL_MODE_U2_BLANK ||
+			mfd->panel_info->aod_cur_mode == AOD_PANEL_MODE_U2_UNBLANK)
+			pr_info("[AOD] br_lvl(%d) -> bl_lvl(%d)\n", br_lvl, bl_lvl);
+		else
+			pr_info("%s: br_lvl(%d) -> bl_lvl(%d)\n", lge_get_blmapname(blmaptype), br_lvl, bl_lvl);
+#else
 		pr_info("%s: br_lvl(%d) -> bl_lvl(%d)\n", lge_get_blmapname(blmaptype), br_lvl, bl_lvl);
+#endif
 	}
 	return bl_lvl;
 }

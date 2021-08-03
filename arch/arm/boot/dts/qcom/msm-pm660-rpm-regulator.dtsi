@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,11 +11,44 @@
  */
 
 &rpm_bus {
+	rpm-regulator-smpa2 {
+		compatible = "qcom,rpm-smd-regulator-resource";
+		qcom,resource-name = "smpa";
+		qcom,resource-id = <2>;
+		qcom,regulator-type = <1>;
+		qcom,hpm-min-load = <100000>;
+		status = "disabled";
+
+		regulator-s2 {
+			compatible = "qcom,rpm-smd-regulator";
+			regulator-name = "pm660_s2";
+			qcom,set = <3>;
+			status = "disabled";
+		};
+	};
+
+	rpm-regulator-smpa3 {
+		compatible = "qcom,rpm-smd-regulator-resource";
+		qcom,resource-name = "smpa";
+		qcom,resource-id = <3>;
+		qcom,regulator-type = <1>;
+		qcom,hpm-min-load = <100000>;
+		status = "disabled";
+
+		regulator-s3 {
+			compatible = "qcom,rpm-smd-regulator";
+			regulator-name = "pm660_s3";
+			qcom,set = <3>;
+			status = "disabled";
+		};
+	};
+
 	rpm-regulator-smpa4 {
 		compatible = "qcom,rpm-smd-regulator-resource";
 		qcom,resource-name = "smpa";
 		qcom,resource-id = <4>;
 		qcom,regulator-type = <1>;
+		qcom,hpm-min-load = <100000>;
 		status = "disabled";
 
 		regulator-s4 {
@@ -31,6 +64,7 @@
 		qcom,resource-name = "smpa";
 		qcom,resource-id = <5>;
 		qcom,regulator-type = <1>;
+		qcom,hpm-min-load = <100000>;
 		status = "disabled";
 
 		regulator-s5 {
@@ -46,6 +80,7 @@
 		qcom,resource-name = "smpa";
 		qcom,resource-id = <6>;
 		qcom,regulator-type = <1>;
+		qcom,hpm-min-load = <100000>;
 		status = "disabled";
 
 		regulator-s6 {
@@ -61,6 +96,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <1>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l1 {
@@ -76,6 +112,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <2>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l2 {
@@ -91,6 +128,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <3>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l3 {
@@ -106,6 +144,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <5>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l5 {
@@ -121,6 +160,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <6>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l6 {
@@ -136,6 +176,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <7>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l7 {
@@ -151,6 +192,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <8>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l8 {
@@ -166,6 +208,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <9>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l9 {
@@ -181,6 +224,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <10>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l10 {
@@ -196,6 +240,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <11>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l11 {
@@ -211,6 +256,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <12>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l12 {
@@ -226,6 +272,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <13>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l13 {
@@ -241,6 +288,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <14>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l14 {
@@ -256,6 +304,7 @@
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <15>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l15 {
@@ -266,11 +315,28 @@
 		};
 	};
 
+	rpm-regulator-ldoa16 {
+		compatible = "qcom,rpm-smd-regulator-resource";
+		qcom,resource-name = "ldoa";
+		qcom,resource-id = <16>;
+		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
+		status = "disabled";
+
+		regulator-l16 {
+			compatible = "qcom,rpm-smd-regulator";
+			regulator-name = "pm660_l16";
+			qcom,set = <3>;
+			status = "disabled";
+		};
+	};
+
 	rpm-regulator-ldoa17 {
 		compatible = "qcom,rpm-smd-regulator-resource";
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <17>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l17 {
@@ -281,11 +347,28 @@
 		};
 	};
 
+	rpm-regulator-ldoa18 {
+		compatible = "qcom,rpm-smd-regulator-resource";
+		qcom,resource-name = "ldoa";
+		qcom,resource-id = <18>;
+		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
+		status = "disabled";
+
+		regulator-l18 {
+			compatible = "qcom,rpm-smd-regulator";
+			regulator-name = "pm660_l18";
+			qcom,set = <3>;
+			status = "disabled";
+		};
+	};
+
 	rpm-regulator-ldoa19 {
 		compatible = "qcom,rpm-smd-regulator-resource";
 		qcom,resource-name = "ldoa";
 		qcom,resource-id = <19>;
 		qcom,regulator-type = <0>;
+		qcom,hpm-min-load = <10000>;
 		status = "disabled";
 
 		regulator-l19 {

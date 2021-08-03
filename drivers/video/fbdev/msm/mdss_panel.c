@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, 2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -54,21 +54,21 @@ int mdss_panel_debugfs_fbc_setup(struct mdss_panel_debugfs_info *debugfs_info,
 		return -ENODEV;
 	}
 
-	debugfs_create_u32("enable", 0644, fbc_root,
+	debugfs_create_bool("enable", 0644, fbc_root,
 			(u32 *)&fbc->enabled);
 	debugfs_create_u32("bpp", 0644, fbc_root,
 			(u32 *)&fbc->target_bpp);
 	debugfs_create_u32("packing", 0644, fbc_root,
 			(u32 *)&fbc->comp_mode);
-	debugfs_create_u32("quant_err", 0644, fbc_root,
+	debugfs_create_bool("quant_err", 0644, fbc_root,
 			(u32 *)&fbc->qerr_enable);
 	debugfs_create_u32("bias", 0644, fbc_root,
 			(u32 *)&fbc->cd_bias);
-	debugfs_create_u32("pat_mode", 0644, fbc_root,
+	debugfs_create_bool("pat_mode", 0644, fbc_root,
 			(u32 *)&fbc->pat_enable);
-	debugfs_create_u32("vlc_mode", 0644, fbc_root,
+	debugfs_create_bool("vlc_mode", 0644, fbc_root,
 			(u32 *)&fbc->vlc_enable);
-	debugfs_create_u32("bflc_mode", 0644, fbc_root,
+	debugfs_create_bool("bflc_mode", 0644, fbc_root,
 			(u32 *)&fbc->bflc_enable);
 	debugfs_create_u32("hline_budget", 0644, fbc_root,
 			(u32 *)&fbc->line_x_budget);
@@ -303,13 +303,13 @@ static int _create_dsi_panel_nodes(struct mdss_panel_debugfs_info *dfs,
 	debugfs_create_u32("dcs_cmd_by_left", 0644, dfs->root,
 			(u32 *)&pinfo->dcs_cmd_by_left);
 	debugfs_create_bool("ulps_feature_enabled", 0644, dfs->root,
-			&pinfo->ulps_feature_enabled);
+			(u32 *)&pinfo->ulps_feature_enabled);
 	debugfs_create_bool("ulps_suspend_enabled", 0644, dfs->root,
-			&pinfo->ulps_suspend_enabled);
+			(u32 *)&pinfo->ulps_suspend_enabled);
 	debugfs_create_bool("esd_check_enabled", 0644, dfs->root,
-			&pinfo->esd_check_enabled);
+			(u32 *)&pinfo->esd_check_enabled);
 	debugfs_create_bool("panel_ack_disabled", 0644, dfs->root,
-			&pinfo->panel_ack_disabled);
+			(u32 *)&pinfo->panel_ack_disabled);
 
 	debugfs_create_u32("hsync_skew", 0644, lcdc_root,
 			(u32 *)&pinfo->lcdc.hsync_skew);
@@ -630,7 +630,6 @@ void mdss_panel_info_from_timing(struct mdss_panel_timing *pt,
 
 	pinfo->yres = pt->yres;
 	pinfo->lcdc.v_front_porch = pt->v_front_porch;
-	pinfo->lcdc.v_front_porch_fixed = pt->v_front_porch;
 	pinfo->lcdc.v_back_porch = pt->v_back_porch;
 	pinfo->lcdc.v_pulse_width = pt->v_pulse_width;
 

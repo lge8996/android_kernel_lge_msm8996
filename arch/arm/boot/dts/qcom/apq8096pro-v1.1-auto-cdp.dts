@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, 2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,18 +20,22 @@
 / {
 	model = "Qualcomm Technologies, Inc. APQ 8096 pro v1.1 AUTO CDP";
 	compatible = "qcom,msm8996-cdp", "qcom,msm8996", "qcom,cdp";
-	qcom,msm-id = <316 0x10001>, <387 0x10001>;
-	qcom,board-id = <0x03010001 0>, <0x00010001 0>;
+	qcom,msm-id = <316 0x10001>;
+	qcom,board-id = <0x03010001 0>;
 };
 
 &spi_9 {
 	status = "ok";
 	can-controller@0 {
-		compatible = "renesas,rh850";
+		compatible = "qcom,renesas,rh850";
 		reg = <0>;
 		interrupt-parent = <&tlmm>;
-		interrupts = <122 0>;
+		interrupts = <127 2>;
 		spi-max-frequency = <5000000>;
+		qcom,clk-freq-mhz = <16000000>;
+		qcom,max-can-channels = <4>;
+		qcom,bits-per-word = <8>;
+		qcom,support-can-fd;
 	};
 };
 

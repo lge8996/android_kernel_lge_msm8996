@@ -65,6 +65,20 @@ void lge_mdss_panel_parse_ddic_name(struct device_node *np,
 	}
 }
 
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_HT_LCD_TUNE_MODE)
+void ht_tune_mode_set(struct mdss_dsi_ctrl_pdata *ctrl)
+{
+	char ht_tune_name[10];
+	snprintf(ht_tune_name, sizeof(ht_tune_name),"ht-tune-%d", ctrl->lge_extra.ht_mode);
+
+	pr_info("ht_tune_name = %s\n",ht_tune_name);
+	lge_send_extra_cmds_by_name(ctrl, ht_tune_name);
+
+	return;
+}
+#endif
+
+
 int lge_mdss_panel_parse_dt_extra_cmds(struct device_node *np,
 		struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
@@ -377,15 +391,6 @@ static int lge_mdss_panel_parse_feature_dt(struct device_node *np,
 		pr_err("lge,use-u2-fsc not exist");
 	}
 
-	ctrl_pdata->lge_extra.esc_clk_rate = 0;
-	rc = of_property_read_u32(np, "lge,esc-clk-rate", &tmp);
-	if (rc) {
-		pr_info("lge,esc-clk-rate not specified\n");
-	} else {
-		ctrl_pdata->lge_extra.esc_clk_rate = tmp;
-		pr_info("lge,esc-clk-rate=%d\n", ctrl_pdata->lge_extra.esc_clk_rate);
-	}
-
 	return 0;
 }
 
@@ -393,6 +398,7 @@ static int lge_mdss_panel_parse_dt(struct device_node *np,
 						struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
 	lge_mdss_panel_parse_ddic_name(np, ctrl_pdata);
+
 	lge_mdss_panel_parse_dt_bl_list_maps(np, ctrl_pdata);
 	if (ctrl_pdata->lge_extra.blmap_list_size == 0)
 		lge_mdss_panel_parse_dt_blmaps(np, ctrl_pdata);
@@ -410,6 +416,8 @@ int lge_ddic_feature_init(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 		return -ENODEV;
 
 	ctrl_pdata->lge_extra.hdr_mode = HDR_OFF;
+	ctrl_pdata->lge_extra.dolby_mode = DOLBY_OFF;
+	ctrl_pdata->lge_extra.sre_mode = SRE_OFF;
 	ctrl_pdata->lge_extra.hl_mode = HL_MODE_OFF;
 	ctrl_pdata->lge_extra.aod_interface = 0x144;
 	ctrl_pdata->lge_extra.cm_preset_step = RGB_DEFAULT_PRESET;
@@ -417,6 +425,7 @@ int lge_ddic_feature_init(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	ctrl_pdata->lge_extra.cm_green_step = RGB_DEFAULT_GREEN;
 	ctrl_pdata->lge_extra.cm_blue_step = RGB_DEFAULT_BLUE;
 	ctrl_pdata->lge_extra.sharpness = SHA_OFF;
+	ctrl_pdata->lge_extra.ie_control = IE_OFF;
 
 	ctrl_pdata->lge_extra.sc_sat_step = SC_MODE_DEFAULT;
 	ctrl_pdata->lge_extra.sc_hue_step = SC_MODE_DEFAULT;
@@ -457,8 +466,6 @@ static int lge_panel_get_blmap_type(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	return LGE_DDIC_OP(ctrl, get_blmap_type);
 }
-
-
 
 int lge_panel_br_to_bl(struct mdss_dsi_ctrl_pdata *ctrl, int br_lvl)
 {

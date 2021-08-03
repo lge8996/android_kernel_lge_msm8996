@@ -31,7 +31,6 @@
 #include "mdss_panel.h"
 
 #define PHY_ADDR_4G (1ULL<<32)
-#define ALIGN_UP(x, align) ((DIV_ROUND_UP((x), (align))) * (align))
 
 void mdss_mdp_format_flag_removal(u32 *table, u32 num, u32 remove_bits)
 {
@@ -241,7 +240,7 @@ void mdss_mdp_intersect_rect(struct mdss_rect *res_rect,
 
 void mdss_mdp_crop_rect(struct mdss_rect *src_rect,
 	struct mdss_rect *dst_rect,
-	const struct mdss_rect *sci_rect, bool normalize)
+	const struct mdss_rect *sci_rect)
 {
 	struct mdss_rect res;
 	mdss_mdp_intersect_rect(&res, dst_rect, sci_rect);
@@ -253,17 +252,9 @@ void mdss_mdp_crop_rect(struct mdss_rect *src_rect,
 			src_rect->w = res.w;
 			src_rect->h = res.h;
 		}
-
-		/* adjust dest rect based on the sci_rect starting */
-		if (normalize) {
-			*dst_rect = (struct mdss_rect) {(res.x - sci_rect->x),
-					(res.y - sci_rect->y), res.w, res.h};
-
-		/* return the actual cropped intersecting rect */
-		} else {
-			*dst_rect = (struct mdss_rect) {res.x, res.y,
-					res.w, res.h};
-		}
+		*dst_rect = (struct mdss_rect)
+			{(res.x - sci_rect->x), (res.y - sci_rect->y),
+			res.w, res.h};
 	}
 }
 
@@ -428,8 +419,13 @@ static int mdss_mdp_get_ubwc_plane_size(struct mdss_mdp_format_params *fmt,
 
 	if (fmt->format == MDP_Y_CBCR_H2V2_UBWC ||
 		fmt->format == MDP_Y_CBCR_H2V2_TP10_UBWC) {
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
 		uint32_t y_stride_alignment = 0, uv_stride_alignment = 0;
 		uint32_t y_height_alignment = 0, uv_height_alignment = 0;
+#else
+		uint32_t y_stride_alignment, uv_stride_alignment;
+		uint32_t y_height_alignment, uv_height_alignment;
+#endif
 		uint32_t y_tile_width = fmt_ubwc->micro.tile_width;
 		uint32_t y_tile_height = fmt_ubwc->micro.tile_height;
 		uint32_t uv_tile_width = y_tile_width / 2;
@@ -459,13 +455,13 @@ static int mdss_mdp_get_ubwc_plane_size(struct mdss_mdp_format_params *fmt,
 		}
 
 		/* Y bitstream stride and plane size */
-		ps->ystride[0] = ALIGN_UP(width, y_stride_alignment);
+		ps->ystride[0] = ALIGN(width, y_stride_alignment);
 		ps->ystride[0] = (ps->ystride[0] * y_bpp_numer) / y_bpp_denom;
 		ps->plane_size[0] = ALIGN(ps->ystride[0] *
 			ALIGN(height, y_height_alignment), 4096);
 
 		/* CbCr bitstream stride and plane size */
-		ps->ystride[1] = ALIGN_UP(width / 2, uv_stride_alignment);
+		ps->ystride[1] = ALIGN(width / 2, uv_stride_alignment);
 		ps->ystride[1] = (ps->ystride[1] * uv_bpp_numer) / uv_bpp_denom;
 		ps->plane_size[1] = ALIGN(ps->ystride[1] *
 			ALIGN(height / 2, uv_height_alignment), 4096);
@@ -943,6 +939,7 @@ static int mdss_mdp_put_img(struct mdss_mdp_img_data *data, bool rotator,
 	} else if (!IS_ERR_OR_NULL(data->srcp_dma_buf)) {
 		pr_debug("ion hdl=%pK buf=0x%pa\n", data->srcp_dma_buf,
 							&data->addr);
+		MDSS_XLOG(data->srcp_dma_buf, &data->addr, data->mapped); //QCT debug patch for SMMU fault issue
 		if (!iclient) {
 			pr_err("invalid ion client\n");
 			return -ENOMEM;
@@ -965,19 +962,16 @@ static int mdss_mdp_put_img(struct mdss_mdp_img_data *data, bool rotator,
 				data->srcp_dma_buf = NULL;
 			}
 		}
-	} else if ((data->flags & MDP_SECURE_DISPLAY_OVERLAY_SESSION) ||
-			(data->flags & MDP_SECURE_CAMERA_OVERLAY_SESSION)) {
+	} else if (data->flags & MDP_SECURE_DISPLAY_OVERLAY_SESSION) {
 		/*
-		 * skip memory unmapping - secure display and camera uses
-		 * physical address which does not require buffer unmapping
+		 * skip memory unmapping - secure display uses physical
+		 * address which does not require buffer unmapping
 		 *
 		 * For LT targets in secure display usecase, srcp_dma_buf will
 		 * be filled due to map call which will be unmapped above.
 		 *
 		 */
-		if (data->ihandle)
-			ion_free(iclient, data->ihandle);
-		pr_debug("free memory handle for secure display/camera content\n");
+		pr_debug("skip memory unmapping for secure display content\n");
 	} else {
 		return -ENOMEM;
 	}
@@ -1011,8 +1005,8 @@ static int mdss_mdp_get_img(struct msmfb_data *img,
 		}
 		data->srcp_f = f;
 
-		if (MAJOR(f.file->f_path.dentry->d_inode->i_rdev) == FB_MAJOR) {
-			fb_num = MINOR(f.file->f_path.dentry->d_inode->i_rdev);
+		if (MAJOR(f.file->f_dentry->d_inode->i_rdev) == FB_MAJOR) {
+			fb_num = MINOR(f.file->f_dentry->d_inode->i_rdev);
 			ret = mdss_fb_get_phys_info(start, len, fb_num);
 			if (ret)
 				pr_err("mdss_fb_get_phys_info() failed\n");
@@ -1056,18 +1050,19 @@ static int mdss_mdp_get_img(struct msmfb_data *img,
 			ret = 0;
 			goto done;
 		} else {
+			struct ion_handle *ihandle = NULL;
 			struct sg_table *sg_ptr = NULL;
 
-			data->ihandle = ion_import_dma_buf(iclient,
-					img->memory_id);
-			if (IS_ERR_OR_NULL(data->ihandle)) {
-				ret = -EINVAL;
-				pr_err("ion import buffer failed\n");
-				data->ihandle = NULL;
-				goto done;
-			}
 			do {
-				sg_ptr = ion_sg_table(iclient, data->ihandle);
+				ihandle = ion_import_dma_buf(iclient,
+							     img->memory_id);
+				if (IS_ERR_OR_NULL(ihandle)) {
+					ret = -EINVAL;
+					pr_err("ion import buffer failed\n");
+					break;
+				}
+
+				sg_ptr = ion_sg_table(iclient, ihandle);
 				if (sg_ptr == NULL) {
 					pr_err("ion sg table get failed\n");
 					ret = -EINVAL;
@@ -1093,6 +1088,8 @@ static int mdss_mdp_get_img(struct msmfb_data *img,
 				ret = 0;
 			} while (0);
 
+			if (!IS_ERR_OR_NULL(ihandle))
+				ion_free(iclient, ihandle);
 			return ret;
 		}
 	}
@@ -1107,8 +1104,9 @@ static int mdss_mdp_get_img(struct msmfb_data *img,
 		data->len -= data->offset;
 
 		pr_debug("mem=%d ihdl=%pK buf=0x%pa len=0x%lx\n",
-			img->memory_id, data->srcp_dma_buf,
-			&data->addr, data->len);
+			 img->memory_id, data->srcp_dma_buf, &data->addr,
+			 data->len);
+		MDSS_XLOG(img->memory_id, data->srcp_dma_buf, &data->addr, data->len); //QCT debug patch for SMMU fault issue
 	} else {
 		mdss_mdp_put_img(data, rotator, dir);
 		return ret ? : -EOVERFLOW;
@@ -1190,7 +1188,7 @@ err_unmap:
 }
 
 static int mdss_mdp_data_get(struct mdss_mdp_data *data,
-		struct msmfb_data *planes, int num_planes, u64 flags,
+		struct msmfb_data *planes, int num_planes, u32 flags,
 		struct device *dev, bool rotator, int dir)
 {
 	int i, rc = 0;
@@ -1203,7 +1201,7 @@ static int mdss_mdp_data_get(struct mdss_mdp_data *data,
 		rc = mdss_mdp_get_img(&planes[i], &data->p[i], dev, rotator,
 				dir);
 		if (rc) {
-			pr_err("failed to get buf p=%d flags=%llx\n", i, flags);
+			pr_err("failed to get buf p=%d flags=%x\n", i, flags);
 			while (i > 0) {
 				i--;
 				mdss_mdp_put_img(&data->p[i], rotator, dir);
@@ -1253,7 +1251,7 @@ void mdss_mdp_data_free(struct mdss_mdp_data *data, bool rotator, int dir)
 }
 
 int mdss_mdp_data_get_and_validate_size(struct mdss_mdp_data *data,
-	struct msmfb_data *planes, int num_planes, u64 flags,
+	struct msmfb_data *planes, int num_planes, u32 flags,
 	struct device *dev, bool rotator, int dir,
 	struct mdp_layer_buffer *buffer)
 {

@@ -5,8 +5,13 @@
 
 extern void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 		struct dsi_panel_cmds *pcmds, u32 flags);
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON)
 extern int lge_mdss_mplus_sysfs_init(struct device *panel_sysfs_dev, struct fb_info *fbi);
 extern void lge_mdss_mplus_sysfs_deinit(struct fb_info *fbi);
+#else
+extern int lge_mdss_lcd_sysfs_init(struct device *panel_sysfs_dev, struct fb_info *fbi);
+extern void lge_mdss_lcd_sysfs_deinit(struct fb_info *fbi);
+#endif
 
 #if IS_ENABLED(CONFIG_LGE_ENHANCE_GALLERY_SHARPNESS)
 static ssize_t sharpness_get(struct device *dev,
@@ -15,10 +20,8 @@ static ssize_t sharpness_get(struct device *dev,
 	ssize_t ret = strnlen(buf, PAGE_SIZE);
 	GET_DATA
 
-#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON)
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON) ||  IS_ENABLED(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
 	ret = sprintf(buf, "%d\n", ctrl->lge_extra.sharpness);
-#elif IS_ENABLED(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
-	ret = sprintf(buf, "%x\n", ctrl->reg_f2h_cmds.cmds[0].payload[3]);
 #else
 	ret = sprintf(buf, "%x\n", ctrl->sharpness_on_cmds.cmds[2].payload[3]);
 #endif
@@ -38,6 +41,16 @@ static ssize_t sharpness_set(struct device *dev,
 	}
 
 	sscanf(buf, "%d", &mode);
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON) ||  IS_ENABLED(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+	LGE_DDIC_OP_LOCKED(ctrl, sharpness_set, &mfd->mdss_sysfs_lock, mode);
+#else
+	ctrl->sharpness_on_cmds.cmds[2].payload[3] = mode;
+
+	mdss_dsi_panel_cmds_send(ctrl, &ctrl->sharpness_on_cmds, CMD_REQ_COMMIT);
+
+	pr_info("%s: sent sharpness enhancement cmd : 0x%02X\n",
+			__func__, ctrl->sharpness_on_cmds.cmds[2].payload[3]);
+#endif
 	return ret;
 }
 static DEVICE_ATTR(sharpness, S_IWUSR|S_IRUGO, sharpness_get, sharpness_set);
@@ -50,6 +63,11 @@ static ssize_t image_enhance_get(struct device *dev,
 	int ret = 0;
 	GET_DATA
 
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON) || IS_ENABLED(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+	ret = LGE_DDIC_OP(ctrl, image_enhance_get);
+#else
+	ret = ctrl->ie_on;
+#endif
 	return sprintf(buf, "%d\n", ret);
 }
 
@@ -67,6 +85,26 @@ static ssize_t image_enhance_set(struct device *dev,
 	sscanf(buf, "%d", &mode);
 	pr_info("%s: IE = %d \n", __func__, mode);
 
+	ctrl->ie_on = mode;
+
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON)
+	LGE_DDIC_OP_LOCKED(ctrl, image_enhance_set, &mfd->mdss_sysfs_lock, mode);
+	LGE_DDIC_OP_LOCKED(ctrl, mplus_change_blmap, &mfd->bl_lock);
+#elif IS_ENABLED(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+	LGE_DDIC_OP_LOCKED(ctrl, image_enhance_set, &mfd->mdss_sysfs_lock, mode);
+#else
+	if(ctrl->ie_on == 1){
+		mdss_dsi_panel_cmds_send(ctrl, &ctrl->ie_on_cmds, CMD_REQ_COMMIT);
+		pr_info("%s: set = %d, image enhance function on\n", __func__, ctrl->ie_on);
+	}
+	else if(ctrl->ie_on == 0){
+		mdss_dsi_panel_cmds_send(ctrl, &ctrl->ie_off_cmds, CMD_REQ_COMMIT);
+		pr_info("%s: set = %d, image enhance funtion off\n", __func__, ctrl->ie_on);
+	}
+	else
+		pr_info("%s: set = %d, wrong set value\n", __func__, ctrl->ie_on);
+#endif
+
 	return ret;
 }
 static DEVICE_ATTR(image_enhance_set, S_IWUSR|S_IRUGO, image_enhance_get, image_enhance_set);
@@ -82,7 +120,27 @@ static ssize_t cabc_set(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
 	ssize_t ret = strnlen(buf, PAGE_SIZE);
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+	struct dsi_panel_cmds *ie_pcmds;            //55h
+	struct dsi_panel_cmds *cabc_pcmds;          //fbh
+#endif
 	GET_DATA
+
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+	ie_pcmds = lge_get_extra_cmds_by_name(ctrl, "ie-ctrl");
+	if (!ie_pcmds)
+	{
+		pr_err("no cmds: ie-ctrl\n");
+		return -EINVAL;
+	}
+
+	cabc_pcmds = lge_get_extra_cmds_by_name(ctrl, "cabc-on-off");
+	if (!cabc_pcmds)
+	{
+		pr_err("no cmds: cabc-on-off\n");
+		return -EINVAL;
+	}
+#endif
 
 	if (pdata->panel_info.panel_power_state == 0) {
 		pr_err("%s: Panel off state. Ignore cabc set cmd\n", __func__);
@@ -94,24 +152,53 @@ static ssize_t cabc_set(struct device *dev,
 #if IS_ENABLED(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
 	if (cabc_on_off == 0) {
 		char mask = CABC_MASK;
-		ctrl->reg_55h_cmds.cmds[0].payload[1] &= (~mask);
-		ctrl->reg_fbh_cmds.cmds[0].payload[4] |= CABC_OFF_VALUE;
+		ie_pcmds->cmds[0].payload[1] &= (~mask);
+		cabc_pcmds->cmds[0].payload[4] = CABC_OFF_VALUE;
 	} else if (cabc_on_off == 1) {
-		ctrl->reg_55h_cmds.cmds[0].payload[1] |= CABC_MASK;
-		ctrl->reg_fbh_cmds.cmds[0].payload[4] |= CABC_ON_VALUE;
+		ie_pcmds->cmds[0].payload[1] |= CABC_MASK;
+		cabc_pcmds->cmds[0].payload[4] |= CABC_ON_VALUE;
 	} else {
 		return -EINVAL;
 	}
 
 	pr_info("%s: CABC = %d, 55h = 0x%02x, fbh = 0x%02x\n",__func__,cabc_on_off,
-		ctrl->reg_55h_cmds.cmds[0].payload[1],ctrl->reg_f0h_cmds.cmds[0].payload[1]);
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_55h_cmds, CMD_REQ_COMMIT);
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_fbh_cmds, CMD_REQ_COMMIT);
+		ie_pcmds->cmds[0].payload[1],cabc_pcmds->cmds[0].payload[1]);
+	mdss_dsi_panel_cmds_send(ctrl, ie_pcmds, CMD_REQ_COMMIT);
+	mdss_dsi_panel_cmds_send(ctrl, cabc_pcmds, CMD_REQ_COMMIT);
 #endif
 	return ret;
 }
 static DEVICE_ATTR(cabc, S_IWUSR|S_IRUGO, cabc_get, cabc_set);
 #endif //CONFIG_LGE_LCD_DYNAMIC_CABC_MIE_CTRL
+
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_HT_LCD_TUNE_MODE)
+static ssize_t get_ht_lcd_tune(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	GET_DATA
+
+	return sprintf(buf, "%d\n", ctrl->lge_extra.ht_mode);
+}
+ssize_t set_ht_lcd_tune(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t len)
+{
+	int new_mode = 0;
+	GET_DATA
+	new_mode = simple_strtol(buf, NULL, 10);
+
+	ctrl->lge_extra.ht_mode = new_mode;
+
+	if (pdata->panel_info.panel_power_state == 0) {
+		pr_err("%s: Panel off state. Ignore ht_tune cmd\n", __func__);
+		return -EINVAL;
+	}
+
+	ht_tune_mode_set(ctrl);
+	return len;
+}
+
+static DEVICE_ATTR(ht_lcd_tune, S_IWUSR|S_IRUGO, get_ht_lcd_tune, set_ht_lcd_tune);
+#endif
 
 #if IS_ENABLED(CONFIG_LGE_DISPLAY_LINEAR_GAMMA)
 static ssize_t linear_gamma_get(struct device *dev,
@@ -152,56 +239,24 @@ static ssize_t sre_get(struct device *dev,
 {
 	GET_DATA
 
-	return sprintf(buf, "%d\n", ctrl->sre_status);
+	return sprintf(buf, "%d\n", ctrl->lge_extra.sre_mode);
 }
 
 static ssize_t sre_set(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t size)
 {
 	ssize_t ret = strnlen(buf, PAGE_SIZE);
-	int input;
-	char mask = SRE_MASK;
+	int mode;
 	GET_DATA
 
 	if (pdata->panel_info.panel_power_state == 0) {
-		ctrl->sre_status = input;
 		pr_err("%s: Panel off state. Ignore sre_set cmd\n", __func__);
 		return -EINVAL;
 	}
 
-	sscanf(buf, "%d", &input);
+	sscanf(buf, "%d", &mode);
 
-	if(ctrl->lge_extra.hdr_mode > 0 || ctrl->dolby_status > 0) {
-		pr_info("%s : HDR or Dolby on, so disable SRE \n", __func__);
-		return ret;
-	}
-
-	ctrl->reg_55h_cmds.cmds[0].payload[1] &= (~mask);
-	if (input == 0) {
-		ctrl->sre_status = 0;
-		pr_info("%s : SRE OFF \n",__func__);
-	} else {
-		if (input == SRE_LOW) {
-			ctrl->sre_status = SRE_LOW;
-			pr_info("%s : SRE LOW \n",__func__);
-			ctrl->reg_55h_cmds.cmds[0].payload[1] |= SRE_MASK_LOW;
-		} else if (input == SRE_MID) {
-			ctrl->sre_status = SRE_MID;
-			pr_info("%s : SRE MID \n",__func__);
-			ctrl->reg_55h_cmds.cmds[0].payload[1] |= SRE_MASK_MID;
-		} else if (input == SRE_HIGH) {
-			ctrl->sre_status = SRE_HIGH;
-			pr_info("%s : SRE HIGH \n",__func__);
-			ctrl->reg_55h_cmds.cmds[0].payload[1] |= SRE_MASK_HIGH;
-		} else {
-			return -EINVAL;
-		}
-	}
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_55h_cmds, CMD_REQ_COMMIT);
-	pr_info("%s : 55h:0x%02x, f0h:0x%02x, f2h(SH):0x%02x, fbh(CABC):0x%02x \n",__func__,
-		ctrl->reg_55h_cmds.cmds[0].payload[1],	ctrl->reg_f0h_cmds.cmds[0].payload[1],
-		ctrl->reg_f2h_cmds.cmds[0].payload[3], ctrl->reg_fbh_cmds.cmds[0].payload[4]);
-
+	LGE_DDIC_OP_LOCKED(ctrl, sre_set, &mfd->mdss_sysfs_lock, mode);
 	return ret;
 }
 
@@ -261,8 +316,7 @@ static ssize_t dolby_mode_set(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	ssize_t ret = strnlen(buf, PAGE_SIZE);
-	int input;
-	char mask = 0x00;
+	int mode;
 	GET_DATA
 
 	if (pdata->panel_info.panel_power_state == 0) {
@@ -270,32 +324,9 @@ static ssize_t dolby_mode_set(struct device *dev,
 		return -EINVAL;
 	}
 
-	sscanf(buf, "%d", &input);
-	ctrl->dolby_status = input;
+	sscanf(buf, "%d", &mode);
+	LGE_DDIC_OP_LOCKED(ctrl, dolby_mode_set, &mfd->mdss_sysfs_lock, mode);
 
-	if (input == 0) {
-		pr_info("%s: Dolby Mode OFF\n", __func__);
-		/* Retore 55h Reg */
-		ctrl->reg_55h_cmds.cmds[0].payload[1] |= CABC_MASK;
-		ctrl->reg_f0h_cmds.cmds[0].payload[1] |= SH_MASK | SAT_MASK;
-		ctrl->reg_fbh_cmds.cmds[0].payload[4] = CABC_ON_VALUE;
-	} else {
-		pr_info("%s: Dolby Mode ON\n", __func__);
-		/* Dolby Setting : CABC OFF, SRE OFF*/
-		mask = (CABC_MASK | SRE_MASK);
-		ctrl->reg_55h_cmds.cmds[0].payload[1] &= (~mask);
-		mask = (SH_MASK | SAT_MASK);
-		ctrl->reg_f0h_cmds.cmds[0].payload[1] &= (~mask);
-		ctrl->reg_fbh_cmds.cmds[0].payload[4] = CABC_OFF_VALUE;
-	}
-	/* Send 55h, f0h cmds in lge_change_reader_mode function */
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_fbh_cmds, CMD_REQ_COMMIT);
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_55h_cmds, CMD_REQ_COMMIT);
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_f0h_cmds, CMD_REQ_COMMIT);
-
-	pr_info("%s : 55h:0x%02x, f0h:0x%02x, f2h(SH):0x%02x, fbh(CABC):0x%02x \n",__func__,
-		ctrl->reg_55h_cmds.cmds[0].payload[1],	ctrl->reg_f0h_cmds.cmds[0].payload[1],
-		ctrl->reg_f2h_cmds.cmds[0].payload[3], ctrl->reg_fbh_cmds.cmds[0].payload[4]);
 	return ret;
 }
 static DEVICE_ATTR(dolby_mode, S_IWUSR|S_IRUGO, dolby_mode_get, dolby_mode_set);
@@ -330,29 +361,7 @@ static ssize_t hdr_mode_set(struct device *dev,
 	LGE_DDIC_OP_LOCKED(ctrl, hdr_mode_set, &mfd->mdss_sysfs_lock, mode);
 	LGE_DDIC_OP_LOCKED(ctrl, mplus_change_blmap, &mfd->bl_lock);
 #else
-	ctrl->lge_extra.hdr_mode = mode;
-	if (mode == 0) {
-		pr_info("%s: HDR Mode OFF\n", __func__);
-		/* Retore 55h & F0h Reg */
-		ctrl->reg_55h_cmds.cmds[0].payload[1] |= CABC_MASK;
-		ctrl->reg_f0h_cmds.cmds[0].payload[1] |= SAT_MASK | SH_MASK;
-		ctrl->reg_fbh_cmds.cmds[0].payload[4] = CABC_ON_VALUE;
-	} else {
-		pr_info("%s: HDR Mode ON\n", __func__);
-		/* Dolby Setting : CABC OFF, SRE OFF, SAT OFF, SH OFF */
-		char mask = (CABC_MASK | SRE_MASK);
-		ctrl->reg_55h_cmds.cmds[0].payload[1] &= (~mask);
-		mask = (SH_MASK | SAT_MASK);
-		ctrl->reg_f0h_cmds.cmds[0].payload[1] &= (~mask);
-		ctrl->reg_fbh_cmds.cmds[0].payload[4] = CABC_OFF_VALUE;
-	}
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_fbh_cmds, CMD_REQ_COMMIT);
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_55h_cmds, CMD_REQ_COMMIT);
-	mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_f0h_cmds, CMD_REQ_COMMIT);
-
-	pr_info("%s : 55h:0x%02x, f0h:0x%02x, f2h(SH):0x%02x, fbh(CABC):0x%02x \n",__func__,
-		ctrl->reg_55h_cmds.cmds[0].payload[1],	ctrl->reg_f0h_cmds.cmds[0].payload[1],
-		ctrl->reg_f2h_cmds.cmds[0].payload[3], ctrl->reg_fbh_cmds.cmds[0].payload[4]);
+	LGE_DDIC_OP_LOCKED(ctrl, hdr_mode_set, &mfd->mdss_sysfs_lock, mode);
 #endif
 	return ret;
 }
@@ -366,6 +375,9 @@ static struct attribute *lge_mdss_imgtune_attrs[] = {
 #if IS_ENABLED(CONFIG_LGE_LCD_DYNAMIC_CABC_MIE_CTRL)
 	&dev_attr_image_enhance_set.attr,
 	&dev_attr_cabc.attr,
+#endif
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_HT_LCD_TUNE_MODE)
+	&dev_attr_ht_lcd_tune.attr,
 #endif
 #if IS_ENABLED(CONFIG_LGE_DISPLAY_LINEAR_GAMMA)
 	&dev_attr_linear_gamma.attr,
@@ -404,7 +416,11 @@ int lge_mdss_sysfs_imgtune_init(struct class *panel, struct fb_info *fbi)
 		}
 		else {
 			rc = sysfs_create_group(&lge_panel_sysfs_imgtune->kobj, &lge_mdss_imgtune_attr_group);
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON)
 			rc += lge_mdss_mplus_sysfs_init(lge_panel_sysfs_imgtune, fbi);
+#else
+			rc += lge_mdss_lcd_sysfs_init(lge_panel_sysfs_imgtune, fbi);
+#endif
 			if (rc)
 				pr_err("lge sysfs group creation failed, rc=%d\n", rc);
 		}
@@ -414,6 +430,11 @@ int lge_mdss_sysfs_imgtune_init(struct class *panel, struct fb_info *fbi)
 
 void lge_mdss_sysfs_imgtune_deinit(struct fb_info *fbi)
 {
-	lge_mdss_mplus_sysfs_deinit(fbi);
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON)
+		lge_mdss_mplus_sysfs_deinit(fbi);
+#else
+		lge_mdss_lcd_sysfs_deinit(fbi);
+#endif
+
 	sysfs_remove_group(&fbi->dev->kobj, &lge_mdss_imgtune_attr_group);
 }

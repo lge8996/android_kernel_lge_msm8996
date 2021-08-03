@@ -383,9 +383,7 @@ static int drawobj_add_sync_fence(struct kgsl_device *device,
 	unsigned long flags;
 	int ret = 0;
 
-	fence = sync_fence_fdget(sync->fd);
-	if (fence == NULL)
-		return -EINVAL;
+
 
 	kref_get(&drawobj->refcount);
 
@@ -430,7 +428,6 @@ static int drawobj_add_sync_fence(struct kgsl_device *device,
 		spin_unlock_irqrestore(&event->handle_lock, flags);
 	}
 
-	sync_fence_put(fence);
 	return ret;
 }
 

@@ -119,16 +119,16 @@ static unsigned int __do_compat_ioctl_nr(unsigned int cmd32)
 static void  __copy_atomic_commit_struct(struct mdp_layer_commit  *commit,
 	struct mdp_layer_commit32 *commit32)
 {
-	unsigned int destSize = sizeof(commit->commit_v1.reserved);
-	unsigned int srcSize = sizeof(commit32->commit_v1.reserved);
-	unsigned int count = (destSize <= srcSize ? destSize : srcSize);
+	unsigned int destsize = sizeof(commit->commit_v1.reserved);
+	unsigned int srcsize = sizeof(commit32->commit_v1.reserved);
+	unsigned int count = (destsize <= srcsize ? destsize : srcsize);
 	commit->version = commit32->version;
 	commit->commit_v1.flags = commit32->commit_v1.flags;
 	commit->commit_v1.input_layer_cnt =
 		commit32->commit_v1.input_layer_cnt;
 	commit->commit_v1.left_roi = commit32->commit_v1.left_roi;
 	commit->commit_v1.right_roi = commit32->commit_v1.right_roi;
-	commit->commit_v1.bl_level = commit32->commit_v1.bl_level;
+
 	memcpy(&commit->commit_v1.reserved, &commit32->commit_v1.reserved,
 		count);
 }
@@ -223,7 +223,6 @@ static struct mdp_input_layer *__create_layer_list(
 
 		layer->flags = layer32->flags;
 		layer->pipe_ndx = layer32->pipe_ndx;
-		layer->rect_num = layer32->rect_num;
 		layer->horz_deci = layer32->horz_deci;
 		layer->vert_deci = layer32->vert_deci;
 		layer->z_order = layer32->z_order;
@@ -309,6 +308,7 @@ static int __compat_atomic_commit(struct fb_info *info, unsigned int cmd,
 	struct mdp_input_layer *layer_list = NULL;
 	struct mdp_input_layer32 *layer_list32 = NULL;
 	struct mdp_output_layer *output_layer = NULL;
+	struct mdp_frc_info *frc_info = NULL;
 
 	/* copy top level memory from 32 bit structure to kernel memory */
 	ret = copy_from_user(&commit32, (void __user *)argp,
@@ -370,6 +370,29 @@ static int __compat_atomic_commit(struct fb_info *info, unsigned int cmd,
 		}
 	}
 
+	if (commit32.commit_v1.frc_info) {
+		int buffer_size = sizeof(struct mdp_frc_info);
+
+		frc_info = kzalloc(buffer_size, GFP_KERNEL);
+		if (!frc_info) {
+			ret = -ENOMEM;
+			goto frc_err;
+		}
+
+		ret = copy_from_user(frc_info,
+				compat_ptr(commit32.commit_v1.frc_info),
+				buffer_size);
+		if (ret) {
+			pr_err("fail to copy frc info from user, ptr %p\n",
+				compat_ptr(commit32.commit_v1.frc_info));
+			kfree(frc_info);
+			ret = -EFAULT;
+			goto frc_err;
+		}
+
+		commit.commit_v1.frc_info = frc_info;
+	}
+
 	ret = mdss_fb_atomic_commit(info, &commit, file);
 	if (ret)
 		pr_err("atomic commit failed ret:%d\n", ret);
@@ -382,6 +405,9 @@ static int __compat_atomic_commit(struct fb_info *info, unsigned int cmd,
 		kfree(layer_list[i].scale);
 		mdss_mdp_free_layer_pp_info(&layer_list[i]);
 	}
+
+	kfree(frc_info);
+frc_err:
 	kfree(layer_list);
 layer_list_err:
 	kfree(layer_list32);
@@ -2982,7 +3008,11 @@ static int mdss_compat_pp_ioctl(struct fb_info *info, unsigned int cmd,
 	uint32_t op;
 	int ret = 0;
 	struct msmfb_mdp_pp32 __user *pp32;
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
+	struct msmfb_mdp_pp __user *pp = NULL;
+#else
 	struct msmfb_mdp_pp __user *pp;
+#endif
 
 	pp32 = compat_ptr(arg);
 	if (copy_from_user(&op, &pp32->op, sizeof(uint32_t)))

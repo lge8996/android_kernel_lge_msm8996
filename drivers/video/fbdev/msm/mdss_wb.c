@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -129,22 +129,10 @@ static int mdss_wb_probe(struct platform_device *pdev)
 {
 	struct mdss_panel_data *pdata = NULL;
 	struct mdss_wb_ctrl *wb_ctrl = NULL;
-	struct mdss_util_intf *util;
 	int rc = 0;
 
 	if (!pdev->dev.of_node)
 		return -ENODEV;
-
-	util = mdss_get_util_intf();
-	if (util == NULL) {
-		pr_err("%s: Failed to get mdss utility functions\n", __func__);
-		return -ENODEV;
-	}
-
-	if (!util->mdp_probe_done) {
-		pr_err("%s: MDP not probed yet!\n", __func__);
-		return -EPROBE_DEFER;
-	}
 
 	wb_ctrl = devm_kzalloc(&pdev->dev, sizeof(*wb_ctrl), GFP_KERNEL);
 	if (!wb_ctrl)

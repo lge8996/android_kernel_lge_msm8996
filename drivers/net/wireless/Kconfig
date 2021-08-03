@@ -326,6 +326,18 @@ config CNSS_QCA6290
 	  These changes are needed to support the new hardware architecture
 	  for CNSS QCA6290 chipset.
 
+config BCMDHD_LEGACY                                                                                      
+       bool "Broadcom 4358 43455 driver support"
+       depends on !BCMDHD_EXT
+       default y                                                             
+       ---help---                                                                                      
+         BCM4358 43455 driver support based on Broadcom 4358 43455 chipset
+
+config BCMDHD_EXT                                                                                      
+       bool "Broadcom 4359 driver support"                                                             
+       ---help---                                                                                      
+         BCM4359 driver support based on Broadcom 4359 chipset  
+
 source "drivers/net/wireless/ath/Kconfig"
 source "drivers/net/wireless/b43/Kconfig"
 source "drivers/net/wireless/b43legacy/Kconfig"

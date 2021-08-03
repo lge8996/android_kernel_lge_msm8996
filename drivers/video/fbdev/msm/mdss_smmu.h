@@ -39,20 +39,8 @@ struct mdss_smmu_domain {
 	unsigned long size;
 };
 
-struct mdss_smmu_private {
-	struct device_node *pdev;
-	struct list_head smmu_device_list;
-	struct list_head user_list;
-	struct mutex smmu_reg_lock;
-};
-
 void mdss_smmu_register(struct device *dev);
 int mdss_smmu_init(struct mdss_data_type *mdata, struct device *dev);
-int mdss_smmu_set_attribute(int domain, int flag, int val);
-
-enum smmu_attributes {
-	EARLY_MAP
-};
 
 static inline int mdss_smmu_dma_data_direction(int dir)
 {
@@ -73,48 +61,17 @@ static inline bool is_mdss_smmu_compatible_device(const char *str)
  * mdss_smmu_is_valid_domain_type()
  *
  * Used to check if rotator smmu domain is defined or not by checking if
- * vbif base is defined. As those are associated.
+ * vbif base is defined and wb rotator exists. As those are associated.
  */
 static inline bool mdss_smmu_is_valid_domain_type(struct mdss_data_type *mdata,
 		int domain_type)
 {
 	if ((domain_type == MDSS_IOMMU_DOMAIN_ROT_UNSECURE ||
 			domain_type == MDSS_IOMMU_DOMAIN_ROT_SECURE) &&
-			!mdss_mdp_is_nrt_vbif_base_defined(mdata))
+			(!mdss_mdp_is_wb_rotator_supported(mdata) ||
+			!mdss_mdp_is_nrt_vbif_base_defined(mdata)))
 		return false;
 	return true;
-}
-
-static inline bool mdss_smmu_is_valid_domain_condition(
-	struct mdss_data_type *mdata,
-	int domain_type,
-	bool is_attach)
-{
-	if (is_attach) {
-		if (test_bit(MDSS_CAPS_SEC_DETACH_SMMU,
-			mdata->mdss_caps_map) &&
-			(mdata->sec_disp_en ||
-			(mdata->sec_cam_en &&
-			domain_type == MDSS_IOMMU_DOMAIN_SECURE))) {
-			pr_debug("SMMU attach not attempted, sd:%d, sc:%d\n",
-					mdata->sec_disp_en, mdata->sec_cam_en);
-			return false;
-		} else {
-			return true;
-		}
-	} else {
-		if (test_bit(MDSS_CAPS_SEC_DETACH_SMMU,
-			mdata->mdss_caps_map) &&
-			(mdata->sec_disp_en ||
-			(mdata->sec_cam_en &&
-			domain_type == MDSS_IOMMU_DOMAIN_SECURE))) {
-			pr_debug("SMMU detach attempted, sd:%d, sc:%d\n",
-					mdata->sec_disp_en, mdata->sec_cam_en);
-			return true;
-		} else {
-			return false;
-		}
-	}
 }
 
 static inline struct mdss_smmu_client *mdss_smmu_get_cb(u32 domain)
@@ -140,19 +97,20 @@ static inline int is_mdss_iommu_attached(void)
 	return mdata ? mdata->iommu_attached : false;
 }
 
-static inline int mdss_smmu_get_domain_type(u64 flags, bool rotator)
+static inline int mdss_smmu_get_domain_type(u32 flags, bool rotator)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	int type;
 
 	if (flags & MDP_SECURE_OVERLAY_SESSION) {
 		type = (rotator &&
-		    mdata->mdss_smmu[MDSS_IOMMU_DOMAIN_ROT_SECURE].base.dev) ?
-		    MDSS_IOMMU_DOMAIN_ROT_SECURE : MDSS_IOMMU_DOMAIN_SECURE;
+			mdata->mdss_smmu[MDSS_IOMMU_DOMAIN_ROT_SECURE].dev) ?
+			MDSS_IOMMU_DOMAIN_ROT_SECURE : MDSS_IOMMU_DOMAIN_SECURE;
 	} else {
 		type = (rotator &&
-		    mdata->mdss_smmu[MDSS_IOMMU_DOMAIN_ROT_UNSECURE].base.dev) ?
-		    MDSS_IOMMU_DOMAIN_ROT_UNSECURE : MDSS_IOMMU_DOMAIN_UNSECURE;
+			mdata->mdss_smmu[MDSS_IOMMU_DOMAIN_ROT_UNSECURE].dev) ?
+			MDSS_IOMMU_DOMAIN_ROT_UNSECURE :
+			MDSS_IOMMU_DOMAIN_UNSECURE;
 	}
 	return type;
 }
@@ -171,7 +129,7 @@ static inline int mdss_smmu_attach(struct mdss_data_type *mdata)
 	}
 
 	if (!mdata->smmu_ops.smmu_attach) {
-		rc = -ENODEV;
+		rc = -ENOSYS;
 		goto end;
 	}
 
@@ -198,7 +156,7 @@ static inline int mdss_smmu_detach(struct mdss_data_type *mdata)
 	}
 
 	if (!mdata->smmu_ops.smmu_detach) {
-		rc = -ENODEV;
+		rc = -ENOSYS;
 		goto end;
 	}
 
@@ -332,6 +290,18 @@ static inline void mdss_smmu_deinit(struct mdss_data_type *mdata)
 {
 	if (mdata->smmu_ops.smmu_deinit)
 		mdata->smmu_ops.smmu_deinit(mdata);
+}
+
+static inline struct sg_table *mdss_smmu_sg_table_clone(struct sg_table
+			*orig_table, gfp_t gfp_mask, bool padding)
+{
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+
+	if (!mdata || !mdata->smmu_ops.smmu_sg_table_clone)
+		return NULL;
+
+	return mdata->smmu_ops.smmu_sg_table_clone(orig_table,
+				gfp_mask, padding);
 }
 
 #endif /* MDSS_SMMU_H */

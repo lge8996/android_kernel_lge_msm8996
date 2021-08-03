@@ -27,8 +27,6 @@ else
 acenic-objs := acenic/tg1.bin acenic/tg2.bin
 endif
 
-fw-shipped-$(CONFIG_SAR_ATMF04_12QFN) += atmf04/atmf04_2CH_V0.60.fw
-
 ifdef CONFIG_LGE_TOUCH_FW_PATH
 fwpath := $(subst ",,$(CONFIG_LGE_TOUCH_FW_PATH))
 ifdef CONFIG_LGE_TOUCH_MODULE_DETECT
@@ -38,6 +36,7 @@ lge_touch_image_files := $(wildcard $(srctree)/firmware/$(fwpath)/*)
 endif
 lge_touch_firmware := $(subst $(srctree)/firmware/,,$(lge_touch_image_files))
 fw-shipped-$(CONFIG_LGE_TOUCH_CORE_BASE) += $(lge_touch_firmware)
+fw-shipped-$(CONFIG_LGE_TOUCH_CORE_BASE_NOS) += $(lge_touch_firmware)
 endif
 
 fw-shipped-$(CONFIG_ACENIC) += $(acenic-objs)
@@ -149,17 +148,19 @@ fw-shipped-$(CONFIG_USB_SERIAL_XIRCOM) += keyspan_pda/xircom_pgs.fw
 fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
+fw-shipped-$(CONFIG_LGE_USB_ANX7418) += anx7418/ocm_hamming_13.bin
+fw-shipped-$(CONFIG_LGE_USB_ANX7418) += anx7418/ocm_crc_08.bin
+fw-shipped-$(CONFIG_LGE_USB_ANX7688) += analogix/mi1_eeprom_20_8b.img
+
+fw-shipped-$(CONFIG_SAR_ATMF04) += atmf04/atmf04_2CH_V0.41.fw
 
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
-
-# Directories which we _might_ need to create, so we have a rule for them.
-firmware-dirs := $(sort $(addprefix $(objtree)/$(obj)/,$(dir $(fw-external-y) $(fw-shipped-all))))
 
 quiet_cmd_ihex  = IHEX    $@
       cmd_ihex  = $(OBJCOPY) -Iihex -Obinary $< $@
 
 quiet_cmd_copy  = COPY    $@
-      cmd_copy  = cp -u $(srctree)/$@ $@
+      cmd_copy  = cp $(srctree)/$@ $@
 
 quiet_cmd_ihex2fw  = IHEX2FW $@
       cmd_ihex2fw  = $(objtree)/$(obj)/ihex2fw $< $@
@@ -210,9 +211,7 @@ ifneq ($(objtree),$(srctree))
 $(patsubst %,$(obj)/%, $(fw-shipped-y)): %: %.gen.S
 	$(call cmd,copy)
 endif
-
-$(patsubst %,$(obj)/%.gen.S, $(fw-shipped-y)): %: $(wordsize_deps) \
-		| $(objtree)/$$(dir %)
+$(patsubst %,$(obj)/%.gen.S, $(fw-shipped-y)): %: $(wordsize_deps)
 	$(call cmd,fwbin,$(patsubst %.gen.S,%,$@))
 $(patsubst %,$(obj)/%.gen.S, $(fw-external-y)): %: $(wordsize_deps) \
 		include/config/extra/firmware/dir.h
@@ -261,8 +260,8 @@ endif
 
 # Remove .S files and binaries created from ihex
 # (during 'make clean' .config isn't included so they're all in $(fw-shipped-))
-targets := $(fw-shipped-) $(patsubst $(obj)/%,%, \
-				$(shell find $(obj) -name \*.gen.S 2>/dev/null))
+# targets := $(fw-shipped-) $(patsubst $(obj)/%,%, \
+#				$(shell find $(obj) -name \*.gen.S 2>/dev/null))
 
 # Without this, built-in.o won't be created when it's empty, and the
 # final vmlinux link will fail.

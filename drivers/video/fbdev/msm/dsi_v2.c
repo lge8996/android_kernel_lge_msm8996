@@ -232,10 +232,6 @@ static int dsi_parse_gpio(struct platform_device *pdev,
 		pr_err("%s:%d, bklt_en gpio not specified\n",
 						__func__, __LINE__);
 
-	ctrl_pdata->bklt_en_gpio_invert =
-			of_property_read_bool(ctrl_pdev->dev.of_node,
-				"qcom,platform-bklight-en-gpio-invert");
-
 	return 0;
 }
 
@@ -338,7 +334,7 @@ static int mdss_dsi_get_dt_vreg_data(struct device *dev,
 				__func__, rc);
 			goto error;
 		}
-		mp->vreg_config[i].enable_load = tmp;
+		mp->vreg_config[i].load[DSS_REG_MODE_ENABLE] = tmp;
 
 		/* disable-load */
 		rc = of_property_read_u32(supply_node,
@@ -348,7 +344,17 @@ static int mdss_dsi_get_dt_vreg_data(struct device *dev,
 				__func__, rc);
 			goto error;
 		}
-		mp->vreg_config[i].disable_load = tmp;
+		mp->vreg_config[i].load[DSS_REG_MODE_DISABLE] = tmp;
+
+		/* ulp-load */
+		rc = of_property_read_u32(supply_node,
+			"qcom,supply-ulp-load", &tmp);
+		if (rc)
+			pr_warn("%s: error reading ulp load. rc=%d\n",
+				__func__, rc);
+
+		mp->vreg_config[i].load[DSS_REG_MODE_ULP] = (!rc ? tmp :
+			mp->vreg_config[i].load[DSS_REG_MODE_ENABLE]);
 
 		/* pre-sleep */
 		rc = of_property_read_u32(supply_node,
@@ -392,13 +398,14 @@ static int mdss_dsi_get_dt_vreg_data(struct device *dev,
 			mp->vreg_config[i].post_off_sleep = tmp;
 		}
 
-		pr_debug("%s: %s min=%d, max=%d, enable=%d, disable=%d, preonsleep=%d, postonsleep=%d, preoffsleep=%d, postoffsleep=%d\n",
+		pr_debug("%s: %s min=%d, max=%d, enable=%d, disable=%d, ulp=%d, preonsleep=%d, postonsleep=%d, preoffsleep=%d, postoffsleep=%d\n",
 			__func__,
 			mp->vreg_config[i].vreg_name,
 			mp->vreg_config[i].min_voltage,
 			mp->vreg_config[i].max_voltage,
-			mp->vreg_config[i].enable_load,
-			mp->vreg_config[i].disable_load,
+			mp->vreg_config[i].load[DSS_REG_MODE_ENABLE]
+			mp->vreg_config[i].load[DSS_REG_MODE_DISABLE]
+			mp->vreg_config[i].load[DSS_REG_MODE_ULP]
 			mp->vreg_config[i].pre_on_sleep,
 			mp->vreg_config[i].post_on_sleep,
 			mp->vreg_config[i].pre_off_sleep,

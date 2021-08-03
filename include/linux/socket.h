@@ -48,6 +48,8 @@ struct msghdr {
 	void		*msg_name;	/* ptr to socket address structure */
 	int		msg_namelen;	/* size of socket address structure */
 	struct iov_iter	msg_iter;	/* data */
+	struct iovec	*msg_iov;	/* scatter/gather array */
+	__kernel_size_t	msg_iovlen;	/* # elements in msg_iov */
 	void		*msg_control;	/* ancillary data */
 	__kernel_size_t	msg_controllen;	/* ancillary data buffer length */
 	unsigned int	msg_flags;	/* flags on received message */
@@ -328,6 +330,14 @@ struct ucred {
 /* IPX options */
 #define IPX_TYPE	1
 
+extern int csum_partial_copy_fromiovecend(unsigned char *kdata, 
+					  struct iovec *iov, 
+					  int offset, 
+					  unsigned int len, __wsum *csump);
+extern unsigned long iov_pages(const struct iovec *iov, int offset,
+			       unsigned long nr_segs);
+
+extern int verify_iovec(struct msghdr *m, struct iovec *iov, struct sockaddr_storage *address, int mode);
 extern int move_addr_to_kernel(void __user *uaddr, int ulen, struct sockaddr_storage *kaddr);
 extern int put_cmsg(struct msghdr*, int level, int type, int len, void *data);
 

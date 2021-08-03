@@ -47,8 +47,6 @@
 #include <linux/msm-bus-board.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/rpm-smd.h>
-#include "soc/qcom/secure_buffer.h"
-#include <asm/cacheflush.h>
 
 #include "mdss.h"
 #include "mdss_fb.h"
@@ -65,8 +63,6 @@
 #define DEFAULT_MDP_PIPE_WIDTH	2048
 #define RES_1080p		(1088*1920)
 #define RES_UHD			(3840*2160)
-
-#define MDP_DEVICE_ID		0x1A
 
 struct mdss_data_type *mdss_res;
 static u32 mem_protect_sd_ctrl_id;
@@ -91,14 +87,12 @@ struct msm_mdp_interface mdp5 = {
 
 #define MEM_PROTECT_SD_CTRL 0xF
 #define MEM_PROTECT_SD_CTRL_FLAT 0x14
-#define MEM_PROTECT_SD_CTRL_SWITCH 0x18
 
 static DEFINE_SPINLOCK(mdp_lock);
 static DEFINE_SPINLOCK(mdss_mdp_intr_lock);
 static DEFINE_MUTEX(mdp_clk_lock);
 static DEFINE_MUTEX(mdp_iommu_ref_cnt_lock);
 static DEFINE_MUTEX(mdp_fs_idle_pc_lock);
-static DEFINE_MUTEX(mdp_sec_ref_cnt_lock);
 
 static struct mdss_panel_intf pan_types[] = {
 	{"dsi", MDSS_PANEL_INTF_DSI},
@@ -147,7 +141,6 @@ static struct msm_bus_scale_pdata mdp_reg_bus_scale_table = {
 	.name = "mdss_reg",
 	.active_only = true,
 };
-static int mdss_mdp_parse_dt_bus_scale(struct platform_device *pdev);
 #endif
 
 u32 invalid_mdp107_wb_output_fmts[] = {
@@ -228,11 +221,12 @@ static struct mdss_mdp_irq mdp_irq_map[] =  {
 	{ MDSS_MDP_IRQ_TYPE_PING_PONG_AUTO_REF, 2, MDSS_MDP_INTR_PING_PONG_2_AUTOREFRESH_DONE, 0},
 	{ MDSS_MDP_IRQ_TYPE_PING_PONG_AUTO_REF, 3, MDSS_MDP_INTR_PING_PONG_3_AUTOREFRESH_DONE, 0},
 	{ MDSS_MDP_IRQ_TYPE_CWB_OVERFLOW, 2, MDSS_MDP_INTR2_PING_PONG_2_CWB_OVERFLOW, 1},
-	{ MDSS_MDP_IRQ_TYPE_CWB_OVERFLOW, 3, MDSS_MDP_INTR2_PING_PONG_3_CWB_OVERFLOW, 1}
+	{ MDSS_MDP_IRQ_TYPE_CWB_OVERFLOW, 3, MDSS_MDP_INTR2_PING_PONG_2_CWB_OVERFLOW, 1}
 };
 
 static struct intr_callback *mdp_intr_cb;
 
+static void mdss_mdp_footswitch_ctrl(struct mdss_data_type *mdata, int on);
 static int mdss_mdp_parse_dt(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_pipe(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_mixer(struct platform_device *pdev);
@@ -247,6 +241,7 @@ static int mdss_mdp_parse_dt_smp(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_prefill(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_misc(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_ad_cfg(struct platform_device *pdev);
+static int mdss_mdp_parse_dt_bus_scale(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_ppb_off(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_cdm(struct platform_device *pdev);
 static int mdss_mdp_parse_dt_dsc(struct platform_device *pdev);
@@ -296,26 +291,6 @@ static void mdss_irq_mask(struct irq_data *data)
 		spin_lock_irqsave(&mdp_lock, irq_flags);
 		mdata->mdss_util->disable_irq(&mdss_misc_hw);
 		spin_unlock_irqrestore(&mdp_lock, irq_flags);
-	} else if (data->hwirq < 64) {
-		/* MDP_INTR is mapped as logical interrupt 32-63. */
-		u32 irq = BIT(data->hwirq - 32);
-
-		spin_lock_irqsave(&mdp_lock, irq_flags);
-		if (!(mdata->mdp_irq_mask[0] & irq)) {
-			pr_debug("%pS: MDP IRQ-%x is NOT set, mask=%x\n",
-					__builtin_return_address(0),
-					irq, mdata->mdp_irq_mask[0]);
-		} else {
-			pr_debug("%pS: MDP IRQ mask old=%x new=%x\n",
-					__builtin_return_address(0),
-					mdata->mdp_irq_mask[0], irq);
-			mdata->mdp_irq_mask[0] &= ~irq;
-			writel_relaxed(mdata->mdp_irq_mask[0], mdata->mdp_base +
-				MDSS_MDP_REG_INTR_EN);
-			if (!is_mdp_irq_enabled())
-				mdata->mdss_util->disable_irq(&mdss_mdp_hw);
-		}
-		spin_unlock_irqrestore(&mdp_lock, irq_flags);
 	}
 }
 
@@ -333,25 +308,6 @@ static void mdss_irq_unmask(struct irq_data *data)
 		spin_lock_irqsave(&mdp_lock, irq_flags);
 		mdata->mdss_util->enable_irq(&mdss_misc_hw);
 		spin_unlock_irqrestore(&mdp_lock, irq_flags);
-	} else if (data->hwirq < 64) {
-		/* MDP_INTR is mapped as logical interrupt 32-63. */
-		u32 irq = BIT(data->hwirq - 32);
-
-		spin_lock_irqsave(&mdp_lock, irq_flags);
-		if (mdata->mdp_irq_mask[0] & irq) {
-			pr_debug("%pS: MDP IRQ-0x%x is already set, mask=%x\n",
-					__builtin_return_address(0),
-					irq, mdata->mdp_irq_mask[0]);
-		} else {
-			pr_debug("%pS: MDP IRQ mask old=%x new=%x\n",
-					__builtin_return_address(0),
-					mdata->mdp_irq_mask[0], irq);
-			mdata->mdp_irq_mask[0] |= irq;
-			writel_relaxed(mdata->mdp_irq_mask[0], mdata->mdp_base +
-				MDSS_MDP_REG_INTR_EN);
-			mdata->mdss_util->enable_irq(&mdss_mdp_hw);
-		}
-		spin_unlock_irqrestore(&mdp_lock, irq_flags);
 	}
 }
 
@@ -359,8 +315,6 @@ static struct irq_chip mdss_irq_chip = {
 	.name		= "mdss",
 	.irq_mask	= mdss_irq_mask,
 	.irq_unmask	= mdss_irq_unmask,
-	/* avoid lazy disable by defining irq_disable explicitly */
-	.irq_disable	= mdss_irq_mask,
 };
 
 static int mdss_irq_domain_map(struct irq_domain *d,
@@ -393,23 +347,10 @@ static irqreturn_t mdss_irq_handler(int irq, void *ptr)
 	mdss_mdp_hw.irq_info->irq_buzy = true;
 
 	if (intr & MDSS_INTR_MDP) {
-		u32 mdp_irq_export;
-
 		spin_lock(&mdp_lock);
 		mdata->mdss_util->irq_dispatch(MDSS_HW_MDP, irq, ptr);
 		spin_unlock(&mdp_lock);
 		intr &= ~MDSS_INTR_MDP;
-
-		/* export MDP_INTR as logical interrupts 32-63 */
-		mdp_irq_export = mdata->mdp_irq_raw[0] &
-					mdata->mdp_irq_export[0];
-		while (mdp_irq_export) {
-			irq_hw_number_t hwirq = fls(mdp_irq_export) - 1;
-
-			generic_handle_irq(irq_find_mapping(
-					mdata->irq_domain, hwirq + 32));
-			mdp_irq_export &= ~(1 << hwirq);
-		}
 	}
 
 	if (intr & MDSS_INTR_DSI0) {
@@ -446,7 +387,7 @@ static irqreturn_t mdss_irq_handler(int irq, void *ptr)
 	return IRQ_HANDLED;
 }
 
-#ifdef CONFIG_QCOM_BUS_SCALING
+#ifdef CONFIG_MSM_BUS_SCALING
 static int mdss_mdp_bus_scale_register(struct mdss_data_type *mdata)
 {
 	struct msm_bus_scale_pdata *reg_bus_pdata;
@@ -783,26 +724,6 @@ int mdss_update_reg_bus_vote(struct reg_bus_client *bus_client, u32 usecase_ndx)
 }
 #endif
 
-void mdss_mdp_vbif_reg_lock(void)
-{
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-
-	mutex_lock(&mdata->reg_lock);
-}
-
-void mdss_mdp_vbif_reg_unlock(void)
-{
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-
-	mutex_unlock(&mdata->reg_lock);
-}
-
-bool mdss_mdp_handoff_pending(void)
-{
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-
-	return mdata->handoff_pending;
-}
 
 static int mdss_mdp_intr2index(u32 intr_type, u32 intf_num)
 {
@@ -860,7 +781,12 @@ void mdss_mdp_irq_clear(struct mdss_data_type *mdata,
 
 int mdss_mdp_irq_enable(u32 intr_type, u32 intf_num)
 {
+
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
 	int irq_idx = 0;
+#else
+	int irq_idx, idx;
+#endif
 	unsigned long irq_flags;
 	int ret = 0;
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
@@ -878,8 +804,13 @@ int mdss_mdp_irq_enable(u32 intr_type, u32 intf_num)
 
 	spin_lock_irqsave(&mdp_lock, irq_flags);
 	if (mdata->mdp_irq_mask[irq.reg_idx] & irq.irq_mask) {
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
 		pr_warn("MDSS MDP IRQ-0x%x is already set, mask=%x\n",
 				irq.irq_mask, mdata->mdp_irq_mask[irq.reg_idx]);
+#else
+		pr_warn("MDSS MDP IRQ-0x%x is already set, mask=%x\n",
+				irq.irq_mask, mdata->mdp_irq_mask[idx]);
+#endif
 		ret = -EBUSY;
 	} else {
 		pr_debug("MDP IRQ mask old=%x new=%x\n",
@@ -1095,9 +1026,7 @@ irqreturn_t mdss_mdp_isr(int irq, void *ptr)
 	u32 isr, mask, hist_isr, hist_mask;
 	int i, j;
 
-	/* Bypass if clock is not enabled and no export irq is requested. */
-	if (!mdata->clk_ena &&
-		!(mdata->mdp_irq_mask[0] & mdata->mdp_irq_export[0]))
+	if (!mdata->clk_ena)
 		return IRQ_HANDLED;
 
 	for (i = 0; i < ARRAY_SIZE(mdp_intr_reg); i++) {
@@ -1108,11 +1037,6 @@ irqreturn_t mdss_mdp_isr(int irq, void *ptr)
 			continue;
 
 		mask = readl_relaxed(mdata->mdp_base + reg.en_off);
-
-		/* Process only non-export irq */
-		mdata->mdp_irq_raw[i] = isr;
-		isr = isr & ~mdata->mdp_irq_export[i];
-
 		writel_relaxed(isr, mdata->mdp_base + reg.clr_off);
 
 		pr_debug("%s: reg:%d isr=%x mask=%x\n",
@@ -1172,60 +1096,16 @@ irqreturn_t mdss_mdp_isr(int irq, void *ptr)
 	return IRQ_HANDLED;
 }
 
-static void mdss_mdp_cxipeak_vote(bool set_vote, unsigned long new_rate,
-		unsigned long prev_rate)
-{
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-	int ret = 0;
-
-	if (!mdata->mdss_cx_ipeak)
-		return;
-
-	/* fmax threshold for mdp in sdm660 is max MDP clk */
-	if (set_vote) {
-		if ((new_rate >= mdata->max_mdp_clk_rate) &&
-				 (prev_rate < mdata->max_mdp_clk_rate))
-			ret = cx_ipeak_update(mdata->mdss_cx_ipeak, true);
-	} else {
-		if ((new_rate < mdata->max_mdp_clk_rate) &&
-				 (prev_rate >= mdata->max_mdp_clk_rate))
-			ret = cx_ipeak_update(mdata->mdss_cx_ipeak, false);
-	}
-	if (ret) {
-		pr_err("cxipeak api fail ret:%d set_vote :%d new_rate:%lu prev_rate:%lu\n",
-				ret, (int)set_vote, new_rate, prev_rate);
-	}
-}
-
 static int mdss_mdp_clk_update(u32 clk_idx, u32 enable)
 {
 	int ret = -ENODEV;
 	struct clk *clk = mdss_mdp_get_clk(clk_idx);
-	struct mdss_data_type *mdata = mdss_res;
 
 	if (clk) {
 		pr_debug("clk=%d en=%d\n", clk_idx, enable);
 		if (enable) {
 			if (clk_idx == MDSS_CLK_MDP_VSYNC)
 				clk_set_rate(clk, 19200000);
-			if (mdss_has_quirk(mdata, MDSS_QUIRK_MDP_CLK_SET_RATE)
-					&& (clk_idx == MDSS_CLK_MDP_CORE)) {
-
-				if (WARN_ON(!mdata->mdp_clk_rate)) {
-					/*
-					 * rate should have been set in probe
-					 * or during clk scaling; but if this
-					 * is not the case, set max clk rate.
-					 */
-					pr_warn("set max mdp clk rate:%u\n",
-						mdata->max_mdp_clk_rate);
-					mdss_mdp_set_clk_rate(
-						mdata->max_mdp_clk_rate, true);
-				} else {
-					clk_set_rate(clk, mdata->mdp_clk_rate);
-				}
-			}
-
 			ret = clk_prepare_enable(clk);
 		} else {
 			clk_disable_unprepare(clk);
@@ -1253,40 +1133,30 @@ int mdss_mdp_vsync_clk_enable(int enable, bool locked)
 	return ret;
 }
 
-void mdss_mdp_set_clk_rate(unsigned long rate, bool locked)
+void mdss_mdp_set_clk_rate(unsigned long rate)
 {
 	struct mdss_data_type *mdata = mdss_res;
 	unsigned long clk_rate;
 	struct clk *clk = mdss_mdp_get_clk(MDSS_CLK_MDP_CORE);
-	unsigned long min_clk_rate, curr_clk_rate;
+	unsigned long min_clk_rate;
 
 	min_clk_rate = max(rate, mdata->perf_tune.min_mdp_clk);
 
 	if (clk) {
-
-		if (!locked)
-			mutex_lock(&mdp_clk_lock);
+		mutex_lock(&mdp_clk_lock);
 		if (min_clk_rate < mdata->max_mdp_clk_rate)
 			clk_rate = clk_round_rate(clk, min_clk_rate);
 		else
 			clk_rate = mdata->max_mdp_clk_rate;
-
-		curr_clk_rate = clk_get_rate(clk);
 		if (IS_ERR_VALUE(clk_rate)) {
 			pr_err("unable to round rate err=%ld\n", clk_rate);
-		} else if (clk_rate != curr_clk_rate) {
-			mdss_mdp_cxipeak_vote(true, clk_rate, curr_clk_rate);
-			mdata->mdp_clk_rate = clk_rate;
-			if (IS_ERR_VALUE(clk_set_rate(clk, clk_rate))) {
+		} else if (clk_rate != clk_get_rate(clk)) {
+			if (IS_ERR_VALUE(clk_set_rate(clk, clk_rate)))
 				pr_err("clk_set_rate failed\n");
-			} else {
-				mdss_mdp_cxipeak_vote(false, clk_rate,
-					 curr_clk_rate);
+			else
 				pr_debug("mdp clk rate=%lu\n", clk_rate);
-			}
 		}
-		if (!locked)
-			mutex_unlock(&mdp_clk_lock);
+		mutex_unlock(&mdp_clk_lock);
 	} else {
 		pr_err("mdp src clk not setup properly\n");
 	}
@@ -1369,84 +1239,16 @@ static inline void __mdss_mdp_reg_access_clk_enable(
 		mdss_update_reg_bus_vote(mdata->reg_bus_clt,
 				VOTE_INDEX_LOW);
 		mdss_bus_rt_bw_vote(true);
-		mdss_mdp_clk_update(MDSS_CLK_MNOC_AHB, 1);
 		mdss_mdp_clk_update(MDSS_CLK_AHB, 1);
 		mdss_mdp_clk_update(MDSS_CLK_AXI, 1);
 		mdss_mdp_clk_update(MDSS_CLK_MDP_CORE, 1);
-		mdss_mdp_clk_update(MDSS_CLK_THROTTLE_AXI, 1);
 	} else {
-		mdss_mdp_clk_update(MDSS_CLK_THROTTLE_AXI, 0);
 		mdss_mdp_clk_update(MDSS_CLK_MDP_CORE, 0);
 		mdss_mdp_clk_update(MDSS_CLK_AXI, 0);
 		mdss_mdp_clk_update(MDSS_CLK_AHB, 0);
-		mdss_mdp_clk_update(MDSS_CLK_MNOC_AHB, 0);
 		mdss_bus_rt_bw_vote(false);
 		mdss_update_reg_bus_vote(mdata->reg_bus_clt,
 				VOTE_INDEX_DISABLE);
-	}
-}
-
-/*
- * __mdss_mdp_clk_control - Overall MDSS clock control for power on/off
- */
-static void __mdss_mdp_clk_control(struct mdss_data_type *mdata, bool enable)
-{
-	int rc = 0;
-	unsigned long flags;
-
-	if (enable) {
-		pm_runtime_get_sync(&mdata->pdev->dev);
-
-		mdss_update_reg_bus_vote(mdata->reg_bus_clt,
-			VOTE_INDEX_LOW);
-
-		rc = mdss_iommu_ctrl(1);
-		if (IS_ERR_VALUE(rc))
-			pr_err("IOMMU attach failed\n");
-
-		/* Active+Sleep */
-		msm_bus_scale_client_update_context(mdata->bus_hdl,
-			false, mdata->curr_bw_uc_idx);
-
-		spin_lock_irqsave(&mdp_lock, flags);
-		mdata->clk_ena = enable;
-		spin_unlock_irqrestore(&mdp_lock, flags);
-
-		mdss_mdp_clk_update(MDSS_CLK_MNOC_AHB, 1);
-		mdss_mdp_clk_update(MDSS_CLK_AHB, 1);
-		mdss_mdp_clk_update(MDSS_CLK_AXI, 1);
-		mdss_mdp_clk_update(MDSS_CLK_MDP_CORE, 1);
-		mdss_mdp_clk_update(MDSS_CLK_MDP_LUT, 1);
-		mdss_mdp_clk_update(MDSS_CLK_THROTTLE_AXI, 1);
-		if (mdata->vsync_ena)
-			mdss_mdp_clk_update(MDSS_CLK_MDP_VSYNC, 1);
-	} else {
-		spin_lock_irqsave(&mdp_lock, flags);
-		mdata->clk_ena = enable;
-		spin_unlock_irqrestore(&mdp_lock, flags);
-
-		if (mdata->vsync_ena)
-			mdss_mdp_clk_update(MDSS_CLK_MDP_VSYNC, 0);
-
-		mdss_mdp_clk_update(MDSS_CLK_MDP_LUT, 0);
-		mdss_mdp_clk_update(MDSS_CLK_MDP_CORE, 0);
-		mdss_mdp_clk_update(MDSS_CLK_AXI, 0);
-		mdss_mdp_clk_update(MDSS_CLK_AHB, 0);
-		mdss_mdp_clk_update(MDSS_CLK_MNOC_AHB, 0);
-		mdss_mdp_clk_update(MDSS_CLK_THROTTLE_AXI, 0);
-
-		/* release iommu control */
-		mdss_iommu_ctrl(0);
-
-		/* Active-Only */
-		msm_bus_scale_client_update_context(mdata->bus_hdl,
-			true, mdata->ao_bw_uc_idx);
-
-		mdss_update_reg_bus_vote(mdata->reg_bus_clt,
-			VOTE_INDEX_DISABLE);
-
-		pm_runtime_mark_last_busy(&mdata->pdev->dev);
-		pm_runtime_put_autosuspend(&mdata->pdev->dev);
 	}
 }
 
@@ -1547,63 +1349,34 @@ int mdss_iommu_ctrl(int enable)
 		return mdata->iommu_ref_cnt;
 }
 
-#define MEM_RETAIN_ON 1
-#define MEM_RETAIN_OFF 0
-#define PERIPH_RETAIN_ON 1
-#define PERIPH_RETAIN_OFF 0
-
-static void mdss_mdp_memory_retention_ctrl(bool mem_ctrl, bool periph_ctrl)
+static void mdss_mdp_memory_retention_enter(void)
 {
 	struct clk *mdss_mdp_clk = NULL;
 	struct clk *mdp_vote_clk = mdss_mdp_get_clk(MDSS_CLK_MDP_CORE);
-	struct clk *mdss_mdp_lut_clk = NULL;
-	struct clk *mdp_lut_vote_clk = mdss_mdp_get_clk(MDSS_CLK_MDP_LUT);
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 
 	if (mdp_vote_clk) {
-		if (test_bit(MDSS_CAPS_MDP_VOTE_CLK_NOT_SUPPORTED,
-				mdata->mdss_caps_map)) {
-			mdss_mdp_clk = mdp_vote_clk;
-			mdss_mdp_lut_clk = mdp_lut_vote_clk;
-		} else {
-			mdss_mdp_clk = clk_get_parent(mdp_vote_clk);
-			mdss_mdp_lut_clk = clk_get_parent(mdp_lut_vote_clk);
-		}
-	}
-
-	__mdss_mdp_reg_access_clk_enable(mdata, true);
-	if (mdss_mdp_clk) {
-		if (mem_ctrl)
+		mdss_mdp_clk = clk_get_parent(mdp_vote_clk);
+		if (mdss_mdp_clk) {
 			clk_set_flags(mdss_mdp_clk, CLKFLAG_RETAIN_MEM);
-		else
-			clk_set_flags(mdss_mdp_clk, CLKFLAG_NORETAIN_MEM);
-
-		if (periph_ctrl) {
-			clk_set_flags(mdss_mdp_clk, CLKFLAG_RETAIN_PERIPH);
-			clk_set_flags(mdss_mdp_clk, CLKFLAG_PERIPH_OFF_CLEAR);
-		} else {
 			clk_set_flags(mdss_mdp_clk, CLKFLAG_PERIPH_OFF_SET);
 			clk_set_flags(mdss_mdp_clk, CLKFLAG_NORETAIN_PERIPH);
 		}
 	}
+}
 
-	if (mdss_mdp_lut_clk) {
-		if (mem_ctrl)
-			clk_set_flags(mdss_mdp_lut_clk, CLKFLAG_RETAIN_MEM);
-		else
-			clk_set_flags(mdss_mdp_lut_clk, CLKFLAG_NORETAIN_MEM);
+static void mdss_mdp_memory_retention_exit(void)
+{
+	struct clk *mdss_mdp_clk = NULL;
+	struct clk *mdp_vote_clk = mdss_mdp_get_clk(MDSS_CLK_MDP_CORE);
 
-		if (periph_ctrl) {
-			clk_set_flags(mdss_mdp_lut_clk, CLKFLAG_RETAIN_PERIPH);
-			clk_set_flags(mdss_mdp_lut_clk,
-				CLKFLAG_PERIPH_OFF_CLEAR);
-		} else {
-			clk_set_flags(mdss_mdp_lut_clk, CLKFLAG_PERIPH_OFF_SET);
-			clk_set_flags(mdss_mdp_lut_clk,
-				CLKFLAG_NORETAIN_PERIPH);
+	if (mdp_vote_clk) {
+		mdss_mdp_clk = clk_get_parent(mdp_vote_clk);
+		if (mdss_mdp_clk) {
+			clk_set_flags(mdss_mdp_clk, CLKFLAG_RETAIN_MEM);
+			clk_set_flags(mdss_mdp_clk, CLKFLAG_RETAIN_PERIPH);
+			clk_set_flags(mdss_mdp_clk, CLKFLAG_PERIPH_OFF_CLEAR);
 		}
 	}
-	__mdss_mdp_reg_access_clk_enable(mdata, false);
 }
 
 /**
@@ -1634,51 +1407,18 @@ static int mdss_mdp_idle_pc_restore(void)
 	mdss_hw_init(mdata);
 	mdss_iommu_ctrl(0);
 
+	/**
+	 * sleep 10 microseconds to make sure AD auto-reinitialization
+	 * is done
+	 */
+	udelay(10);
+	mdss_mdp_memory_retention_exit();
+
 	mdss_mdp_ctl_restore(true);
 	mdata->idle_pc = false;
 
 end:
-	if (mdata->mem_retain) {
-		/**
-		 * sleep 10 microseconds to make sure AD auto-reinitialization
-		 * is done
-		 */
-		udelay(10);
-		mdss_mdp_memory_retention_ctrl(MEM_RETAIN_ON,
-			PERIPH_RETAIN_ON);
-		mdata->mem_retain = false;
-	}
-
 	mutex_unlock(&mdp_fs_idle_pc_lock);
-	return rc;
-}
-
-/**
- * mdss_mdp_retention_init() - initialize retention setting
- * @mdata: pointer to the global mdss data structure.
- */
-static int mdss_mdp_retention_init(struct mdss_data_type *mdata)
-{
-	struct clk *mdss_axi_clk = mdss_mdp_get_clk(MDSS_CLK_AXI);
-	int rc;
-
-	if (!mdss_axi_clk) {
-		pr_err("failed to get AXI clock\n");
-		return -EINVAL;
-	}
-
-	rc = clk_set_flags(mdss_axi_clk, CLKFLAG_NORETAIN_MEM);
-	if (rc) {
-		pr_err("failed to set AXI no memory retention %d\n", rc);
-		return rc;
-	}
-
-	rc = clk_set_flags(mdss_axi_clk, CLKFLAG_NORETAIN_PERIPH);
-	if (rc) {
-		pr_err("failed to set AXI no periphery retention %d\n", rc);
-		return rc;
-	}
-
 	return rc;
 }
 
@@ -1741,7 +1481,9 @@ void mdss_mdp_clk_ctrl(int enable)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	static int mdp_clk_cnt;
+	unsigned long flags;
 	int changed = 0;
+	int rc = 0;
 
 	mutex_lock(&mdp_clk_lock);
 	if (enable) {
@@ -1765,8 +1507,48 @@ void mdss_mdp_clk_ctrl(int enable)
 		__builtin_return_address(0), current->group_leader->comm,
 		mdata->bus_ref_cnt, changed, enable);
 
-	if (changed)
-		__mdss_mdp_clk_control(mdata, enable);
+	if (changed) {
+		if (enable) {
+			pm_runtime_get_sync(&mdata->pdev->dev);
+
+			mdss_update_reg_bus_vote(mdata->reg_bus_clt,
+				VOTE_INDEX_LOW);
+
+			rc = mdss_iommu_ctrl(1);
+			if (IS_ERR_VALUE(rc))
+				pr_err("IOMMU attach failed\n");
+
+			/* Active+Sleep */
+			msm_bus_scale_client_update_context(mdata->bus_hdl,
+				false, mdata->curr_bw_uc_idx);
+		}
+
+		spin_lock_irqsave(&mdp_lock, flags);
+		mdata->clk_ena = enable;
+		spin_unlock_irqrestore(&mdp_lock, flags);
+
+		mdss_mdp_clk_update(MDSS_CLK_AHB, enable);
+		mdss_mdp_clk_update(MDSS_CLK_AXI, enable);
+		mdss_mdp_clk_update(MDSS_CLK_MDP_CORE, enable);
+		mdss_mdp_clk_update(MDSS_CLK_MDP_LUT, enable);
+		if (mdata->vsync_ena)
+			mdss_mdp_clk_update(MDSS_CLK_MDP_VSYNC, enable);
+
+		if (!enable) {
+			/* release iommu control */
+			mdss_iommu_ctrl(0);
+
+			/* Active-Only */
+			msm_bus_scale_client_update_context(mdata->bus_hdl,
+				true, mdata->ao_bw_uc_idx);
+
+			mdss_update_reg_bus_vote(mdata->reg_bus_clt,
+				VOTE_INDEX_DISABLE);
+
+			pm_runtime_mark_last_busy(&mdata->pdev->dev);
+			pm_runtime_put_autosuspend(&mdata->pdev->dev);
+		}
+	}
 
 	if (enable && changed)
 		mdss_mdp_idle_pc_restore();
@@ -1797,8 +1579,7 @@ static inline int mdss_mdp_irq_clk_register(struct mdss_data_type *mdata,
 
 static void __mdss_restore_sec_cfg(struct mdss_data_type *mdata)
 {
-	int ret;
-	u64 scm_ret = 0;
+	int ret, scm_ret = 0;
 
 	if (test_bit(MDSS_CAPS_SCM_RESTORE_NOT_REQUIRED, mdata->mdss_caps_map))
 		return;
@@ -1809,7 +1590,7 @@ static void __mdss_restore_sec_cfg(struct mdss_data_type *mdata)
 
 	ret = scm_restore_sec_cfg(SEC_DEVICE_MDSS, 0, &scm_ret);
 	if (ret || scm_ret)
-		pr_warn("scm_restore_sec_cfg failed %d %llu\n",
+		pr_warn("scm_restore_sec_cfg failed %d %d\n",
 				ret, scm_ret);
 
 	__mdss_mdp_reg_access_clk_enable(mdata, false);
@@ -1823,18 +1604,16 @@ static int mdss_mdp_gdsc_notifier_call(struct notifier_block *self,
 	mdata = container_of(self, struct mdss_data_type, gdsc_cb);
 
 	if (event & REGULATOR_EVENT_ENABLE) {
-		__mdss_restore_sec_cfg(mdata);
-	} else if (event & REGULATOR_EVENT_PRE_DISABLE) {
-		int active_cnt = atomic_read(&mdata->active_intf_cnt);
-
-		pr_debug("mdss gdsc is getting disabled, active_cnt=%d\n",
-			active_cnt);
 		/*
-		 * halt the vbif transactions only if we have any active
-		 * overlay session
+		 * As SMMU in low tier targets is not power collapsible,
+		 * hence we don't need to restore sec configuration.
 		 */
-		if (active_cnt)
-			mdss_mdp_vbif_axi_halt(mdata);
+		if (!mdss_mdp_req_init_restore_cfg(mdata))
+			__mdss_restore_sec_cfg(mdata);
+	} else if (event & REGULATOR_EVENT_PRE_DISABLE) {
+		pr_debug("mdss gdsc is getting disabled\n");
+		/* halt the vbif transactions */
+		mdss_mdp_vbif_axi_halt(mdata);
 	}
 
 	return NOTIFY_OK;
@@ -1854,7 +1633,7 @@ static int mdss_mdp_irq_clk_setup(struct mdss_data_type *mdata)
 	pr_debug("max mdp clk rate=%d\n", mdata->max_mdp_clk_rate);
 
 	ret = devm_request_irq(&mdata->pdev->dev, mdss_mdp_hw.irq_info->irq,
-				mdss_irq_handler, 0x0, "MDSS", mdata);
+				mdss_irq_handler, IRQF_DISABLED, "MDSS", mdata);
 	if (ret) {
 		pr_err("mdp request_irq() failed!\n");
 		return ret;
@@ -1868,13 +1647,11 @@ static int mdss_mdp_irq_clk_setup(struct mdss_data_type *mdata)
 		return -EINVAL;
 	}
 
-	mdata->core_gdsc = devm_regulator_get_optional(&mdata->pdev->dev,
-		"gdsc-core");
-	if (IS_ERR_OR_NULL(mdata->core_gdsc)) {
-		mdata->core_gdsc = NULL;
-		pr_err("unable to get core gdsc regulator\n");
-	} else {
-		pr_debug("core gdsc regulator found\n");
+	mdata->venus = devm_regulator_get_optional(&mdata->pdev->dev,
+		"gdsc-venus");
+	if (IS_ERR_OR_NULL(mdata->venus)) {
+		mdata->venus = NULL;
+		pr_debug("unable to get venus gdsc regulator\n");
 	}
 
 	mdata->fs_ena = false;
@@ -1892,24 +1669,6 @@ static int mdss_mdp_irq_clk_setup(struct mdss_data_type *mdata)
 		pr_debug("unable to get CX reg. rc=%d\n",
 					PTR_RET(mdata->vdd_cx));
 		mdata->vdd_cx = NULL;
-	} else {
-		/* Parse CX voltage settings */
-		ret = of_property_read_u32(mdata->pdev->dev.of_node,
-			"vdd-cx-min-uV", &mdata->vdd_cx_min_uv);
-		if (ret) {
-			pr_err("min uV for vdd-cx not specified. rc=%d\n", ret);
-			return ret;
-		}
-
-		ret = of_property_read_u32(mdata->pdev->dev.of_node,
-			"vdd-cx-max-uV", &mdata->vdd_cx_max_uv);
-		if (ret) {
-			pr_err("max uV for vdd-cx not specified. rc=%d\n", ret);
-			return ret;
-		}
-
-		pr_debug("vdd_cx [min_uV, max_uV] = [%d %d]\n",
-			mdata->vdd_cx_min_uv, mdata->vdd_cx_max_uv);
 	}
 
 	mdata->reg_bus_clt = mdss_reg_bus_vote_client_create("mdp\0");
@@ -1920,7 +1679,8 @@ static int mdss_mdp_irq_clk_setup(struct mdss_data_type *mdata)
 
 	if (mdss_mdp_irq_clk_register(mdata, "bus_clk", MDSS_CLK_AXI) ||
 	    mdss_mdp_irq_clk_register(mdata, "iface_clk", MDSS_CLK_AHB) ||
-	    mdss_mdp_irq_clk_register(mdata, "core_clk", MDSS_CLK_MDP_CORE))
+	    mdss_mdp_irq_clk_register(mdata, "core_clk",
+				      MDSS_CLK_MDP_CORE))
 		return -EINVAL;
 
 	/* lut_clk is not present on all MDSS revisions */
@@ -1929,15 +1689,8 @@ static int mdss_mdp_irq_clk_setup(struct mdss_data_type *mdata)
 	/* vsync_clk is optional for non-smart panels */
 	mdss_mdp_irq_clk_register(mdata, "vsync_clk", MDSS_CLK_MDP_VSYNC);
 
-	/* this clk is not present on all MDSS revisions */
-	mdss_mdp_irq_clk_register(mdata, "mnoc_clk", MDSS_CLK_MNOC_AHB);
-
-	/* this clk is not present on all MDSS revisions */
-	mdss_mdp_irq_clk_register(mdata, "throttle_bus_clk",
-				  MDSS_CLK_THROTTLE_AXI);
-
 	/* Setting the default clock rate to the max supported.*/
-	mdss_mdp_set_clk_rate(mdata->max_mdp_clk_rate, false);
+	mdss_mdp_set_clk_rate(mdata->max_mdp_clk_rate);
 	pr_debug("mdp clk rate=%ld\n",
 		mdss_mdp_get_clk_rate(MDSS_CLK_MDP_CORE, false));
 
@@ -1993,20 +1746,6 @@ static u32 mdss_get_props(void)
 	return props;
 }
 
-static void mdss_rpm_set_msg_ram(bool enable)
-{
-	u32 read_reg = 0;
-	void __iomem *rpm_msg_ram = ioremap(0x7781FC, 4);
-
-	if (rpm_msg_ram) {
-		writel_relaxed(enable, rpm_msg_ram);
-		read_reg = readl_relaxed(rpm_msg_ram);
-		pr_debug("%s enable=%d read_val=%x\n", __func__, enable,
-				read_reg);
-		iounmap(rpm_msg_ram);
-	}
-}
-
 void mdss_mdp_init_default_prefill_factors(struct mdss_data_type *mdata)
 {
 	mdata->prefill_data.prefill_factors.fmt_mt_nv12_factor = 8;
@@ -2033,8 +1772,8 @@ static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 	mdata->hflip_buffer_reused = true;
 	/* prevent disable of prefill calculations */
 	mdata->min_prefill_lines = 0xffff;
-	/* clock gating feature is enabled by default */
-	mdata->enable_gate = true;
+	/* clock gating feature is disabled by default */
+	mdata->enable_gate = false;
 	mdata->pixel_ram_size = 0;
 	mem_protect_sd_ctrl_id = MEM_PROTECT_SD_CTRL_FLAT;
 
@@ -2048,6 +1787,8 @@ static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 			ARRAY_SIZE(invalid_mdp107_wb_output_fmts),
 			VALID_MDP_WB_INTF_FORMAT);
 	case MDSS_MDP_HW_REV_107_2:
+		/* disable ECG for 28nm PHY platform */
+		mdata->enable_gate = false;
 		mdata->max_target_zorder = 7; /* excluding base layer */
 		mdata->max_cursor_size = 128;
 		mdata->per_pipe_ib_factor.numer = 8;
@@ -2059,8 +1800,7 @@ static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 		mdata->pixel_ram_size = 50 * 1024;
 		set_bit(MDSS_QOS_PER_PIPE_IB, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_OVERHEAD_FACTOR, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_CDP, mdata->mdss_qos_map); /* cdp supported */
-		mdata->enable_cdp = true; /* enable cdp */
+		set_bit(MDSS_QOS_CDP, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_OTLIM, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_PER_PIPE_LUT, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_SIMPLIFIED_PREFILL, mdata->mdss_qos_map);
@@ -2141,7 +1881,7 @@ static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 	case MDSS_MDP_HW_REV_300:
 	case MDSS_MDP_HW_REV_301:
 		mdata->max_target_zorder = 7; /* excluding base layer */
-		mdata->max_cursor_size = 512;
+		mdata->max_cursor_size = 384;
 		mdata->per_pipe_ib_factor.numer = 8;
 		mdata->per_pipe_ib_factor.denom = 5;
 		mdata->apply_post_scale_bytes = false;
@@ -2151,20 +1891,15 @@ static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 		mdata->pixel_ram_size = 50 * 1024;
 		mdata->rects_per_sspp[MDSS_MDP_PIPE_TYPE_DMA] = 2;
 
-		mem_protect_sd_ctrl_id = MEM_PROTECT_SD_CTRL_SWITCH;
 		set_bit(MDSS_QOS_PER_PIPE_IB, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_REMAPPER, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_TS_PREFILL, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_WB_QOS, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_OVERHEAD_FACTOR, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_CDP, mdata->mdss_qos_map); /* cdp supported */
-		mdata->enable_cdp = false; /* disable cdp */
+		set_bit(MDSS_QOS_CDP, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_OTLIM, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_PER_PIPE_LUT, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_SIMPLIFIED_PREFILL, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_TS_PREFILL, mdata->mdss_qos_map);
 		set_bit(MDSS_QOS_IB_NOCR, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_WB2_WRITE_GATHER_EN, mdata->mdss_qos_map);
 		set_bit(MDSS_CAPS_YUV_CONFIG, mdata->mdss_caps_map);
 		set_bit(MDSS_CAPS_SCM_RESTORE_NOT_REQUIRED,
 			mdata->mdss_caps_map);
@@ -2172,67 +1907,12 @@ static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 			mdata->mdss_caps_map);
 		set_bit(MDSS_CAPS_QSEED3, mdata->mdss_caps_map);
 		set_bit(MDSS_CAPS_DEST_SCALER, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_CWB_SUPPORTED, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_MDP_VOTE_CLK_NOT_SUPPORTED,
-			mdata->mdss_caps_map);
 		mdss_mdp_init_default_prefill_factors(mdata);
 		mdss_set_quirk(mdata, MDSS_QUIRK_DSC_RIGHT_ONLY_PU);
 		mdss_set_quirk(mdata, MDSS_QUIRK_DSC_2SLICE_PU_THRPUT);
-		mdss_set_quirk(mdata, MDSS_QUIRK_MMSS_GDSC_COLLAPSE);
-		mdss_set_quirk(mdata, MDSS_QUIRK_MDP_CLK_SET_RATE);
+		mdss_set_quirk(mdata, MDSS_QUIRK_SRC_SPLIT_ALWAYS);
 		mdata->has_wb_ubwc = true;
 		set_bit(MDSS_CAPS_10_BIT_SUPPORTED, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_SEC_DETACH_SMMU, mdata->mdss_caps_map);
-		mdss_set_quirk(mdata, MDSS_QUIRK_HDR_SUPPORT_ENABLED);
-		break;
-	case MDSS_MDP_HW_REV_320:
-		mdss_set_quirk(mdata, MDSS_QUIRK_DSC_RIGHT_ONLY_PU);
-		mdss_set_quirk(mdata, MDSS_QUIRK_DSC_2SLICE_PU_THRPUT);
-	case MDSS_MDP_HW_REV_330:
-		mdata->max_target_zorder = 7; /* excluding base layer */
-		mdata->max_cursor_size = 512;
-		mdata->per_pipe_ib_factor.numer = 8;
-		mdata->per_pipe_ib_factor.denom = 5;
-		mdata->apply_post_scale_bytes = false;
-		mdata->hflip_buffer_reused = false;
-		mdata->min_prefill_lines = 25;
-		mdata->has_ubwc = true;
-		mdata->pixel_ram_size =
-			(mdata->mdp_rev == MDSS_MDP_HW_REV_320) ? 50 : 40;
-		mdata->pixel_ram_size *= 1024;
-		mdata->rects_per_sspp[MDSS_MDP_PIPE_TYPE_DMA] = 2;
-
-		mem_protect_sd_ctrl_id = MEM_PROTECT_SD_CTRL_SWITCH;
-		set_bit(MDSS_QOS_PER_PIPE_IB, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_REMAPPER, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_TS_PREFILL, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_OVERHEAD_FACTOR, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_CDP, mdata->mdss_qos_map); /* cdp supported */
-		mdata->enable_cdp = false; /* disable cdp */
-		set_bit(MDSS_QOS_OTLIM, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_PER_PIPE_LUT, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_SIMPLIFIED_PREFILL, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_TS_PREFILL, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_IB_NOCR, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_WB2_WRITE_GATHER_EN, mdata->mdss_qos_map);
-		set_bit(MDSS_QOS_WB_QOS, mdata->mdss_qos_map);
-		set_bit(MDSS_CAPS_CWB_SUPPORTED, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_YUV_CONFIG, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_SCM_RESTORE_NOT_REQUIRED,
-			mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_3D_MUX_UNDERRUN_RECOVERY_SUPPORTED,
-			mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_QSEED3, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_DEST_SCALER, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_MDP_VOTE_CLK_NOT_SUPPORTED,
-			mdata->mdss_caps_map);
-		mdss_mdp_init_default_prefill_factors(mdata);
-		mdss_set_quirk(mdata, MDSS_QUIRK_MMSS_GDSC_COLLAPSE);
-		mdss_set_quirk(mdata, MDSS_QUIRK_MDP_CLK_SET_RATE);
-		mdss_set_quirk(mdata, MDSS_QUIRK_DMA_BI_DIR);
-		mdata->has_wb_ubwc = true;
-		set_bit(MDSS_CAPS_10_BIT_SUPPORTED, mdata->mdss_caps_map);
-		set_bit(MDSS_CAPS_SEC_DETACH_SMMU, mdata->mdss_caps_map);
 		break;
 	default:
 		mdata->max_target_zorder = 4; /* excluding base layer */
@@ -2328,10 +2008,9 @@ static u32 mdss_mdp_res_init(struct mdss_data_type *mdata)
 static u32 mdss_mdp_scaler_init(struct mdss_data_type *mdata,
 				struct device *dev)
 {
-	int ret = -EINVAL;
+	int ret;
 	struct device_node *node;
 	u32 prop_val;
-	int len = 0;
 
 	if (!dev)
 		return -EPERM;
@@ -2367,7 +2046,8 @@ static u32 mdss_mdp_scaler_init(struct mdss_data_type *mdata,
 	}
 	mdata->scaler_off->vig_scaler_lut_off = prop_val;
 	mdata->scaler_off->has_dest_scaler =
-		of_property_read_bool(node, "qcom,mdss-has-dest-scaler");
+		of_property_read_bool(mdata->pdev->dev.of_node,
+				"qcom,mdss-has-dest-scaler");
 	if (mdata->scaler_off->has_dest_scaler) {
 		ret = of_property_read_u32(node,
 				"qcom,mdss-dest-block-off",
@@ -2379,67 +2059,42 @@ static u32 mdss_mdp_scaler_init(struct mdss_data_type *mdata,
 		}
 		mdata->scaler_off->dest_base = mdata->mdss_io.base +
 			prop_val;
-
-		if (!of_find_property(node, "qcom,mdss-dest-scaler-off", &len)
-				|| (len < 1)) {
-			pr_err("find property %s failed ret %d\n",
-					"qcom,mdss-dest-scaler-off", ret);
-			return -EINVAL;
-		}
-		mdata->scaler_off->ndest_scalers = len/sizeof(u32);
-
+		mdata->scaler_off->ndest_scalers =
+			mdss_mdp_parse_dt_prop_len(mdata->pdev,
+					"qcom,mdss-dest-scalers-off");
 		mdata->scaler_off->dest_scaler_off =
-			devm_kzalloc(dev, sizeof(u32) *
+			devm_kzalloc(&mdata->pdev->dev, sizeof(u32) *
 					mdata->scaler_off->ndest_scalers,
 					GFP_KERNEL);
 		if  (!mdata->scaler_off->dest_scaler_off) {
+			kfree(mdata->scaler_off->dest_scaler_off);
 			return -ENOMEM;
 		}
-		ret = of_property_read_u32_array(node,
+		ret = mdss_mdp_parse_dt_handler(mdata->pdev,
 				"qcom,mdss-dest-scaler-off",
 				mdata->scaler_off->dest_scaler_off,
 				mdata->scaler_off->ndest_scalers);
 		if (ret)
-			return ret;
-
+			return -EINVAL;
 		mdata->scaler_off->dest_scaler_lut_off =
-			devm_kzalloc(dev, sizeof(u32) *
+			devm_kzalloc(&mdata->pdev->dev, sizeof(u32) *
 					mdata->scaler_off->ndest_scalers,
 					GFP_KERNEL);
 		if  (!mdata->scaler_off->dest_scaler_lut_off) {
+			kfree(mdata->scaler_off->dest_scaler_lut_off);
 			return -ENOMEM;
 		}
-		ret = of_property_read_u32_array(node,
-				"qcom,mdss-dest-scaler-lut-off",
+		ret = mdss_mdp_parse_dt_handler(mdata->pdev,
+				"qcom,mdss-dest-scalers-lut-off",
 				mdata->scaler_off->dest_scaler_lut_off,
 				mdata->scaler_off->ndest_scalers);
 		if (ret)
-			return ret;
-
-		ret = of_property_read_u32(dev->of_node,
-				"qcom,max-dest-scaler-input-width",
-				&mdata->max_dest_scaler_input_width);
-		if (ret) {
-			pr_debug("read property %s failed ret %d\n",
-					"qcom,max-dest-scaler-input-width",
-					ret);
-		}
-
-		ret = of_property_read_u32(dev->of_node,
-				"qcom,max-dest-scaler-output-width",
-				&mdata->max_dest_scaler_output_width);
-		if (ret) {
-			pr_debug("read property %s failed ret %d\n",
-					"qcom,max-dest-scaler-output-width",
-					ret);
-		}
-
-		ret = mdss_mdp_ds_addr_setup(mdata);
+			return -EINVAL;
 	}
 
 	mutex_init(&mdata->scaler_off->scaler_lock);
 
-	return ret;
+	return 0;
 }
 
 /**
@@ -2458,10 +2113,10 @@ void mdss_mdp_footswitch_ctrl_splash(int on)
 		if (on) {
 			mdata->handoff_pending = true;
 			pr_debug("Enable MDP FS for splash.\n");
-			if (mdata->core_gdsc) {
-				ret = regulator_enable(mdata->core_gdsc);
+			if (mdata->venus) {
+				ret = regulator_enable(mdata->venus);
 				if (ret)
-					pr_err("core_gdsc failed to enable\n");
+					pr_err("venus failed to enable\n");
 			}
 
 			ret = regulator_enable(mdata->fs);
@@ -2475,8 +2130,8 @@ void mdss_mdp_footswitch_ctrl_splash(int on)
 			mdss_bus_bandwidth_ctrl(false);
 			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 			regulator_disable(mdata->fs);
-			if (mdata->core_gdsc)
-				regulator_disable(mdata->core_gdsc);
+			if (mdata->venus)
+				regulator_disable(mdata->venus);
 			mdata->handoff_pending = false;
 		}
 	} else {
@@ -2620,8 +2275,6 @@ static void __update_sspp_info(struct mdss_mdp_pipe *pipe,
 	size_t len = PAGE_SIZE;
 	int num_bytes = BITS_TO_BYTES(MDP_IMGTYPE_LIMIT1);
 
-	if (!pipe)
-		return;
 #define SPRINT(fmt, ...) \
 		(*cnt += scnprintf(buf + *cnt, len - *cnt, fmt, ##__VA_ARGS__))
 
@@ -2742,16 +2395,14 @@ ssize_t mdss_mdp_show_capabilities(struct device *dev,
 	if (mdata->clk_factor.numer)
 		SPRINT("clk_fudge_factor=%u,%u\n", mdata->clk_factor.numer,
 			mdata->clk_factor.denom);
-	if (test_bit(MDSS_CAPS_DEST_SCALER, mdata->mdss_caps_map)) {
-		SPRINT("max_dest_scaler_input_width=%u\n",
-				mdata->max_dest_scaler_input_width);
-		SPRINT("max_dest_scaler_output_width=%u\n",
-				mdata->max_dest_scaler_output_width);
-		SPRINT("dest_scaler_count=%u\n",
-				mdata->scaler_off->ndest_scalers);
-		SPRINT("max_dest_scale_up=%u\n", MAX_UPSCALE_RATIO);
+	if (mdata->has_rot_dwnscale) {
+		if (mdata->rot_dwnscale_min)
+			SPRINT("rot_dwnscale_min=%u\n",
+				mdata->rot_dwnscale_min);
+		if (mdata->rot_dwnscale_max)
+			SPRINT("rot_dwnscale_max=%u\n",
+				mdata->rot_dwnscale_max);
 	}
-
 	SPRINT("features=");
 	if (mdata->has_bwc)
 		SPRINT(" bwc");
@@ -2777,14 +2428,8 @@ ssize_t mdss_mdp_show_capabilities(struct device *dev,
 		SPRINT(" dest_scaler");
 	if (mdata->has_separate_rotator)
 		SPRINT(" separate_rotator");
-	if (test_bit(MDSS_CAPS_CWB_SUPPORTED, mdata->mdss_caps_map))
-		SPRINT(" concurrent_writeback");
-	if (test_bit(MDSS_CAPS_AVR_SUPPORTED,  mdata->mdss_caps_map))
-		SPRINT(" avr");
 	if (mdss_has_quirk(mdata, MDSS_QUIRK_HDR_SUPPORT_ENABLED))
 		SPRINT(" hdr");
-	if (mdata->nvig_pipes && mdata->mdp_rev >= MDSS_MDP_HW_REV_300)
-		SPRINT(" vig_csc_db"); /* double buffered VIG CSC block */
 	SPRINT("\n");
 #undef SPRINT
 
@@ -2905,12 +2550,6 @@ static ssize_t fps_ratio_show(struct device *dev,
 
 int fps_cnt_before = 0;
 extern struct fb_info *msm_fb_get_pan_fb(void);
-
-int mdss_mdp_leave_extra_cnt(int cnt)
-{
-       fps_cnt_before -= cnt;
-       return 0;
-}
 
 static ssize_t fps_fcnt_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -3045,7 +2684,6 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&mdata->reg_bus_clist);
 	atomic_set(&mdata->sd_client_count, 0);
 	atomic_set(&mdata->active_intf_cnt, 0);
-	init_waitqueue_head(&mdata->secure_waitq);
 
 	mdss_res->mdss_util = mdss_get_util_intf();
 	if (mdss_res->mdss_util == NULL) {
@@ -3060,9 +2698,12 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	mdss_res->mdss_util->bus_bandwidth_ctrl = mdss_bus_bandwidth_ctrl;
 	mdss_res->mdss_util->panel_intf_type = mdss_panel_intf_type;
 	mdss_res->mdss_util->panel_intf_status = mdss_panel_get_intf_status;
-	mdss_res->mdss_util->vbif_reg_lock = mdss_mdp_vbif_reg_lock;
-	mdss_res->mdss_util->vbif_reg_unlock = mdss_mdp_vbif_reg_unlock;
-	mdss_res->mdss_util->mdp_handoff_pending = mdss_mdp_handoff_pending;
+
+	if (mdss_res->mdss_util->param_check(mdss_mdp_panel)) {
+		mdss_res->mdss_util->display_disabled = true;
+		mdss_res->mdss_util->mdp_probe_done = true;
+		return 0;
+	}
 
 	rc = msm_dss_ioremap_byname(pdev, &mdata->mdss_io, "mdp_phys");
 	if (rc) {
@@ -3105,7 +2746,7 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	mdss_mdp_hw.ptr = mdata;
 
 	/* export misc. interrupts to external driver */
-	mdata->irq_domain = irq_domain_add_linear(pdev->dev.of_node, 64,
+	mdata->irq_domain = irq_domain_add_linear(pdev->dev.of_node, 32,
 			&mdss_irq_domain_ops, mdata);
 	if (!mdata->irq_domain) {
 		pr_err("unable to add linear domain\n");
@@ -3121,12 +2762,6 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	rc = mdss_mdp_res_init(mdata);
 	if (rc) {
 		pr_err("unable to initialize mdss mdp resources\n");
-		goto probe_done;
-	}
-
-	rc = mdss_mdp_retention_init(mdata);
-	if (rc) {
-		pr_err("unable to initialize mdss mdp retention\n");
 		goto probe_done;
 	}
 
@@ -3222,9 +2857,13 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 		MDSS_MDP_REG_DISP_INTF_SEL);
 	split_display = readl_relaxed(mdata->mdp_base +
 		MDSS_MDP_REG_SPLIT_DISPLAY_EN);
+	mdata->splash_intf_sel = intf_sel;
+	mdata->splash_split_disp = split_display;
+
 	if (intf_sel != 0) {
 		for (i = 0; i < 4; i++)
-			num_of_display_on += ((intf_sel >> i*8) & 0x000000FF);
+			if ((intf_sel >> i*8) & 0x000000FF)
+				num_of_display_on++;
 
 		/*
 		 * For split display enabled - DSI0, DSI1 interfaces are
@@ -3236,13 +2875,15 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 	}
 	if (!num_of_display_on) {
 		mdss_mdp_footswitch_ctrl_splash(false);
+		msm_bus_scale_client_update_request(
+					mdata->bus_hdl, 0);
+		mdata->ao_bw_uc_idx = 0;
 	} else {
 		mdata->handoff_pending = true;
 		/*
 		 * If multiple displays are enabled in LK, ctrl_splash off will
 		 * be called multiple times during splash_cleanup. Need to
-		 * enable it symmetrically
-		*/
+		 * enable it symmetrically*/
 		for (i = 1; i < num_of_display_on; i++)
 			mdss_mdp_footswitch_ctrl_splash(true);
 	}
@@ -3256,36 +2897,6 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 			sizeof(u32), GFP_KERNEL);
 	if (mdss_res->mdp_irq_mask == NULL)
 		return -ENOMEM;
-
-	mdss_res->mdp_irq_raw = kcalloc(ARRAY_SIZE(mdp_intr_reg),
-			sizeof(u32), GFP_KERNEL);
-	if (mdss_res->mdp_irq_raw == NULL) {
-		kfree(mdss_res->mdp_irq_mask);
-		mdss_res->mdp_irq_mask = NULL;
-		return -ENOMEM;
-	}
-
-	mdss_res->mdp_irq_export = kcalloc(ARRAY_SIZE(mdp_intr_reg),
-			sizeof(u32), GFP_KERNEL);
-	if (mdss_res->mdp_irq_export == NULL) {
-		kfree(mdss_res->mdp_irq_mask);
-		kfree(mdss_res->mdp_irq_raw);
-		mdss_res->mdp_irq_mask = NULL;
-		mdss_res->mdp_irq_raw = NULL;
-		return -ENOMEM;
-	}
-
-	/*
-	 * If rotator is indicated as separate prior to 2.0, it means
-	 * rotator block in WB0 & WB1 are serviced by external driver.
-	 * In that case, specify WB0 & WB1 irq as export in mdp_irq_export;
-	 * otherwise, set mdp_irq_export to zero will disable mdp irq
-	 * export.
-	 */
-	if (mdss_res->has_separate_rotator &&
-			(mdata->mdp_rev < MDSS_MDP_HW_REV_200))
-		mdss_res->mdp_irq_export[0] = MDSS_MDP_INTR_WB_0_DONE |
-						MDSS_MDP_INTR_WB_1_DONE;
 
 	pr_info("mdss version = 0x%x, bootloader display is %s, num %d, intf_sel=0x%08x\n",
 		mdata->mdp_rev, num_of_display_on ? "on" : "off",
@@ -4356,7 +3967,6 @@ static int mdss_mdp_parse_dt_prefill(struct platform_device *pdev)
 static void mdss_mdp_parse_vbif_qos(struct platform_device *pdev)
 {
 	struct mdss_data_type *mdata = platform_get_drvdata(pdev);
-	u32 npriority_lvl_nrt;
 	int rc;
 
 	mdata->npriority_lvl = mdss_mdp_parse_dt_prop_len(pdev,
@@ -4382,20 +3992,8 @@ static void mdss_mdp_parse_vbif_qos(struct platform_device *pdev)
 		return;
 	}
 
-	npriority_lvl_nrt = mdss_mdp_parse_dt_prop_len(pdev,
+	mdata->npriority_lvl = mdss_mdp_parse_dt_prop_len(pdev,
 			"qcom,mdss-vbif-qos-nrt-setting");
-
-	if (!npriority_lvl_nrt) {
-		pr_debug("no vbif nrt priorities found rt:%d\n",
-			mdata->npriority_lvl);
-		return;
-	} else if (npriority_lvl_nrt != mdata->npriority_lvl) {
-		/* driver expects same number for both nrt and rt */
-		pr_err("invalid nrt settings nrt(%d) != rt(%d)\n",
-			npriority_lvl_nrt, mdata->npriority_lvl);
-		return;
-	}
-
 	if (mdata->npriority_lvl == MDSS_VBIF_QOS_REMAP_ENTRIES) {
 		mdata->vbif_nrt_qos = kzalloc(sizeof(u32) *
 				mdata->npriority_lvl, GFP_KERNEL);
@@ -4413,7 +4011,7 @@ static void mdss_mdp_parse_vbif_qos(struct platform_device *pdev)
 		}
 	} else {
 		mdata->npriority_lvl = 0;
-		pr_debug("Invalid or no vbif qos nrt setting\n");
+		pr_debug("Invalid or no vbif qos nrt seting\n");
 	}
 }
 
@@ -4639,15 +4237,6 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 	mdss_mdp_parse_dt_fudge_factors(pdev, "qcom,mdss-clk-factor",
 		&mdata->clk_factor);
 
-	/*
-	 * Bus throughput factor will be used during high downscale cases.
-	 * The recommended default factor is 1.1.
-	 */
-	mdata->bus_throughput_factor.numer = 11;
-	mdata->bus_throughput_factor.denom = 10;
-	mdss_mdp_parse_dt_fudge_factors(pdev, "qcom,mdss-bus-througput-factor",
-		&mdata->bus_throughput_factor);
-
 	rc = of_property_read_u32(pdev->dev.of_node,
 			"qcom,max-bandwidth-low-kbps", &mdata->max_bw_low);
 	if (rc)
@@ -4684,6 +4273,19 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 		 "qcom,mdss-traffic-shaper-enabled");
 	mdata->has_rot_dwnscale = of_property_read_bool(pdev->dev.of_node,
 		"qcom,mdss-has-rotator-downscale");
+	if (mdata->has_rot_dwnscale) {
+		rc = of_property_read_u32(pdev->dev.of_node,
+			"qcom,mdss-rot-downscale-min",
+			&mdata->rot_dwnscale_min);
+		if (rc)
+			pr_err("Min rotator downscale property not specified\n");
+
+		rc = of_property_read_u32(pdev->dev.of_node,
+			"qcom,mdss-rot-downscale-max",
+			&mdata->rot_dwnscale_max);
+		if (rc)
+			pr_err("Max rotator downscale property not specified\n");
+	}
 
 	rc = of_property_read_u32(pdev->dev.of_node,
 		"qcom,mdss-dram-channels", &mdata->bus_channels);
@@ -4696,10 +4298,6 @@ static int mdss_mdp_parse_dt_misc(struct platform_device *pdev)
 		pr_debug("max pipe width not specified. Using default value\n");
 		mdata->max_pipe_width = DEFAULT_MDP_PIPE_WIDTH;
 	}
-
-	if (of_find_property(pdev->dev.of_node, "qcom,mdss-cx-ipeak", NULL))
-		mdata->mdss_cx_ipeak = cx_ipeak_register(pdev->dev.of_node,
-								"qcom,mdss-cx-ipeak");
 	return 0;
 }
 
@@ -4776,7 +4374,7 @@ static int mdss_mdp_parse_dt_ppb_off(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_QCOM_BUS_SCALING
+#ifdef CONFIG_MSM_BUS_SCALING
 static int mdss_mdp_parse_dt_bus_scale(struct platform_device *pdev)
 {
 	int rc, paths;
@@ -4852,6 +4450,12 @@ static int mdss_mdp_parse_dt_bus_scale(struct platform_device *pdev)
 
 	return rc;
 }
+#else
+static int mdss_mdp_parse_dt_bus_scale(struct platform_device *pdev)
+{
+	return 0;
+}
+
 #endif
 
 static int mdss_mdp_parse_dt_handler(struct platform_device *pdev,
@@ -5033,40 +4637,39 @@ static void apply_dynamic_ot_limit(u32 *ot_lim,
 	struct mdss_mdp_set_ot_params *params)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-	u32 res;
+	u32 res, read_vbif_ot;
+	u32 rot_ot = 4;
 
 	if (false == test_bit(MDSS_QOS_OTLIM, mdata->mdss_qos_map))
 		return;
 
 	/* Dynamic OT setting done only for rotator and WFD */
-	if (!((params->is_rot && params->is_yuv) || params->is_wfd))
+	if (!((params->is_rot && params->is_yuv) || params->is_wb))
 		return;
 
 	res = params->width * params->height;
 
 	pr_debug("w:%d h:%d rot:%d yuv:%d wb:%d res:%d fps:%d\n",
 		params->width, params->height, params->is_rot,
-		params->is_yuv, params->is_wfd, res, params->frame_rate);
+		params->is_yuv, params->is_wb, res, params->frame_rate);
 
 	switch (mdata->mdp_rev) {
 	case MDSS_MDP_HW_REV_114:
+		/*
+		 * MDP rev is same for msm8937 and msm8940, but rotator OT
+		 * recommendations are different. Setting it based on AXI OT.
+		 */
+		read_vbif_ot = MDSS_VBIF_READ(mdata, MMSS_VBIF_OUT_RD_LIM_CONF0,
+					false);
+		rot_ot  = (read_vbif_ot == 0x10) ? 4 : 8;
 	case MDSS_MDP_HW_REV_115:
 	case MDSS_MDP_HW_REV_116:
 		if ((res <= RES_1080p) && (params->frame_rate <= 30))
 			*ot_lim = 2;
 		else if (params->is_rot && params->is_yuv)
-			*ot_lim = 4;
+			*ot_lim = rot_ot;
 		else
 			*ot_lim = 6;
-		break;
-	case MDSS_MDP_HW_REV_320:
-	case MDSS_MDP_HW_REV_330:
-		if ((res <= RES_1080p) && (params->frame_rate <= 30))
-			*ot_lim = 2;
-		else if ((res <= RES_1080p) && (params->frame_rate <= 60))
-			*ot_lim = 6;
-		else if ((res <= RES_UHD) && (params->frame_rate <= 30))
-			*ot_lim = 16;
 		break;
 	default:
 		if (res <= RES_1080p) {
@@ -5239,8 +4842,8 @@ static int mdss_mdp_cx_ctrl(struct mdss_data_type *mdata, int enable)
 	if (enable) {
 		rc = regulator_set_voltage(
 				mdata->vdd_cx,
-				mdata->vdd_cx_min_uv,
-				mdata->vdd_cx_max_uv);
+				RPM_REGULATOR_CORNER_SVS_SOC,
+				RPM_REGULATOR_CORNER_SUPER_TURBO);
 		if (rc < 0)
 			goto vreg_set_voltage_fail;
 
@@ -5259,8 +4862,8 @@ static int mdss_mdp_cx_ctrl(struct mdss_data_type *mdata, int enable)
 		}
 		rc = regulator_set_voltage(
 				mdata->vdd_cx,
-				0,
-				mdata->vdd_cx_max_uv);
+				RPM_REGULATOR_CORNER_NONE,
+				RPM_REGULATOR_CORNER_SUPER_TURBO);
 		if (rc < 0)
 			goto vreg_set_voltage_fail;
 	}
@@ -5273,22 +4876,6 @@ vreg_set_voltage_fail:
 }
 
 /**
- * mdss_mdp_notify_idle_pc() - Notify fb driver of idle power collapse
- * @mdata: MDP private data
- *
- * This function is called if there are active overlays.
- */
-static void mdss_mdp_notify_idle_pc(struct mdss_data_type *mdata)
-{
-	int i;
-
-	for (i = 0; i < mdata->nctl; i++)
-		if ((mdata->ctl_off[i].ref_cnt) &&
-			!mdss_mdp_ctl_is_power_off(&mdata->ctl_off[i]))
-			mdss_fb_idle_pc(mdata->ctl_off[i].mfd);
-}
-
-/**
  * mdss_mdp_footswitch_ctrl() - Disable/enable MDSS GDSC and CX/Batfet rails
  * @mdata: MDP private data
  * @on: 1 to turn on footswitch, 0 to turn off footswitch
@@ -5298,11 +4885,10 @@ static void mdss_mdp_notify_idle_pc(struct mdss_data_type *mdata)
  * active (but likely in an idle state), the vote for the CX and the batfet
  * rails should not be released.
  */
-void mdss_mdp_footswitch_ctrl(struct mdss_data_type *mdata, int on)
+static void mdss_mdp_footswitch_ctrl(struct mdss_data_type *mdata, int on)
 {
 	int ret;
 	int active_cnt = 0;
-	bool footswitch_suspend = false;
 
 	if (!mdata->fs)
 		return;
@@ -5313,20 +4899,11 @@ void mdss_mdp_footswitch_ctrl(struct mdss_data_type *mdata, int on)
 	if (on) {
 		if (!mdata->fs_ena) {
 			pr_debug("Enable MDP FS\n");
-			if (mdata->core_gdsc) {
-				ret = regulator_enable(mdata->core_gdsc);
+			if (mdata->venus) {
+				ret = regulator_enable(mdata->venus);
 				if (ret)
-					pr_err("core_gdsc failed to enable\n");
+					pr_err("venus failed to enable\n");
 			}
-
-			/*
-			 * Advise RPM to not turn MMSS GDSC off, this will
-			 * ensure that GDSC off is maintained during Active
-			 * display and during Idle display
-			 */
-			if (mdss_has_quirk(mdata,
-					MDSS_QUIRK_MMSS_GDSC_COLLAPSE))
-				mdss_rpm_set_msg_ram(true);
 
 			ret = regulator_enable(mdata->fs);
 			if (ret)
@@ -5348,185 +4925,59 @@ void mdss_mdp_footswitch_ctrl(struct mdss_data_type *mdata, int on)
 				 * Turning off GDSC while overlays are still
 				 * active.
 				 */
-
-				mdss_mdp_memory_retention_ctrl(MEM_RETAIN_ON,
-					PERIPH_RETAIN_OFF);
 				mdata->idle_pc = true;
-				mdss_mdp_notify_idle_pc(mdata);
 				pr_debug("idle pc. active overlays=%d\n",
 					active_cnt);
+				mdss_mdp_memory_retention_enter();
 			} else {
-
-				footswitch_suspend = true;
 				mdss_mdp_cx_ctrl(mdata, false);
 				mdss_mdp_batfet_ctrl(mdata, false);
-				mdss_mdp_memory_retention_ctrl(
-					MEM_RETAIN_OFF,
-					PERIPH_RETAIN_OFF);
 			}
-			mdata->mem_retain = true;
 			if (mdata->en_svs_high)
 				mdss_mdp_config_cx_voltage(mdata, false);
 			regulator_disable(mdata->fs);
-			if (mdata->core_gdsc)
-				regulator_disable(mdata->core_gdsc);
-
-			if (footswitch_suspend) {
-				/*
-				 * Advise RPM to turn MMSS GDSC off during
-				 * suspend case, do this after the MDSS GDSC
-				 * regulator OFF, so we can ensure that MMSS
-				 * GDSC will go OFF after the MDSS GDSC
-				 * regulator
-				 */
-				if (mdss_has_quirk(mdata,
-						MDSS_QUIRK_MMSS_GDSC_COLLAPSE))
-					mdss_rpm_set_msg_ram(false);
-			}
+			if (mdata->venus)
+				regulator_disable(mdata->venus);
 		}
 		mdata->fs_ena = false;
 	}
 }
 
-int mdss_mdp_secure_session_ctrl(unsigned int enable, u64 flags)
+int mdss_mdp_secure_display_ctrl(struct mdss_data_type *mdata,
+	unsigned int enable)
 {
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	struct sd_ctrl_req {
 		unsigned int enable;
 	} __attribute__ ((__packed__)) request;
 	unsigned int resp = -1;
 	int ret = 0;
-	uint32_t sid_info;
 	struct scm_desc desc;
-	bool changed = false;
 
-	mutex_lock(&mdp_sec_ref_cnt_lock);
-
-	if (enable) {
-		if (mdata->sec_session_cnt == 0)
-			changed = true;
-		mdata->sec_session_cnt++;
-	} else {
-		if (mdata->sec_session_cnt != 0) {
-			mdata->sec_session_cnt--;
-			if (mdata->sec_session_cnt == 0)
-				changed = true;
-		} else {
-			pr_warn("%s: ref_count is not balanced\n",
-				__func__);
-		}
+	if ((enable && (mdss_get_sd_client_cnt() > 0)) ||
+		(!enable && (mdss_get_sd_client_cnt() > 1))) {
+		mdss_update_sd_client(mdata, enable);
+		return ret;
 	}
 
-	if (!changed)
-		goto end;
+	desc.args[0] = request.enable = enable;
+	desc.arginfo = SCM_ARGS(1);
 
-	if (test_bit(MDSS_CAPS_SEC_DETACH_SMMU, mdata->mdss_caps_map)) {
-		/*
-		 * Prepare syscall to hypervisor to switch the secure_vmid
-		 * between secure and non-secure contexts
-		 */
-		/* MDP secure SID */
-		sid_info = 0x1;
-		desc.arginfo = SCM_ARGS(4, SCM_VAL, SCM_RW, SCM_VAL, SCM_VAL);
-		desc.args[0] = MDP_DEVICE_ID;
-		desc.args[1] = SCM_BUFFER_PHYS(&sid_info);
-		desc.args[2] = sizeof(uint32_t);
-
-
-		pr_debug("Enable/Disable: %d, Flags %llx\n", enable, flags);
-		if (enable) {
-			if (flags & MDP_SECURE_DISPLAY_OVERLAY_SESSION) {
-				desc.args[3] = VMID_CP_SEC_DISPLAY;
-				mdata->sec_disp_en = 1;
-			} else if (flags & MDP_SECURE_CAMERA_OVERLAY_SESSION) {
-				desc.args[3] = VMID_CP_CAMERA_PREVIEW;
-				mdata->sec_cam_en = 1;
-			} else {
-				ret = 0;
-				goto end;
-			}
-
-			/* detach smmu contexts */
-			ret = mdss_smmu_detach(mdata);
-			if (ret) {
-				pr_err("Error while detaching smmu contexts ret = %d\n",
-					ret);
-				ret = -EINVAL;
-				goto end;
-			}
-
-			/* let the driver think smmu is still attached */
-			mdata->iommu_attached = true;
-
-			dmac_flush_range(&sid_info, &sid_info + 1);
-			ret = scm_call2(SCM_SIP_FNID(SCM_SVC_MP,
-				mem_protect_sd_ctrl_id), &desc);
-			if (ret) {
-				pr_err("Error scm_call MEM_PROTECT_SD_CTRL(%u) ret=%dm resp=%x\n",
-						enable, ret, resp);
-				ret = -EINVAL;
-				goto end;
-			}
-			resp = desc.ret[0];
-
-			pr_debug("scm_call MEM_PROTECT_SD_CTRL(%u): ret=%d, resp=%x\n",
-					enable, ret, resp);
-		} else {
-			desc.args[3] = VMID_CP_PIXEL;
-			if (flags & MDP_SECURE_DISPLAY_OVERLAY_SESSION)
-				mdata->sec_disp_en = 0;
-			else if (flags & MDP_SECURE_CAMERA_OVERLAY_SESSION)
-				mdata->sec_cam_en = 0;
-
-			dmac_flush_range(&sid_info, &sid_info + 1);
-			ret = scm_call2(SCM_SIP_FNID(SCM_SVC_MP,
-				mem_protect_sd_ctrl_id), &desc);
-			if (ret)
-				MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl",
-						"dsi0_phy", "dsi1_ctrl",
-						"dsi1_phy", "vbif", "vbif_nrt",
-						"dbg_bus", "vbif_dbg_bus",
-						"panic");
-			resp = desc.ret[0];
-
-			pr_debug("scm_call MEM_PROTECT_SD_CTRL(%u): ret=%d, resp=%x\n",
-					enable, ret, resp);
-
-			/* re-attach smmu contexts */
-			mdata->iommu_attached = false;
-			ret = mdss_smmu_attach(mdata);
-			if (ret) {
-				pr_err("Error while attaching smmu contexts ret = %d\n",
-					ret);
-				ret = -EINVAL;
-				goto end;
-			}
-		}
-		MDSS_XLOG(enable);
+	if (!is_scm_armv8()) {
+		ret = scm_call(SCM_SVC_MP, MEM_PROTECT_SD_CTRL,
+			&request, sizeof(request), &resp, sizeof(resp));
 	} else {
-		desc.args[0] = request.enable = enable;
-		desc.arginfo = SCM_ARGS(1);
+		ret = scm_call2(SCM_SIP_FNID(SCM_SVC_MP,
+				mem_protect_sd_ctrl_id), &desc);
+		resp = desc.ret[0];
+	}
 
-		if (!is_scm_armv8()) {
-			ret = scm_call(SCM_SVC_MP, MEM_PROTECT_SD_CTRL,
-					&request,
-					sizeof(request),
-					&resp,
-					sizeof(resp));
-		} else {
-			ret = scm_call2(SCM_SIP_FNID(SCM_SVC_MP,
-						mem_protect_sd_ctrl_id), &desc);
-			resp = desc.ret[0];
-		}
-
-		pr_debug("scm_call MEM_PROTECT_SD_CTRL(%u): ret=%d, resp=%x\n",
+	pr_debug("scm_call MEM_PROTECT_SD_CTRL(%u): ret=%d, resp=%x",
 				enable, ret, resp);
-	}
+	if (ret)
+		return ret;
 
-end:
-	mutex_unlock(&mdp_sec_ref_cnt_lock);
-	return ret;
-
+	mdss_update_sd_client(mdata, enable);
+	return resp;
 }
 
 static inline int mdss_mdp_suspend_sub(struct mdss_data_type *mdata)
@@ -5685,8 +5136,6 @@ static int mdss_mdp_remove(struct platform_device *pdev)
 	pm_runtime_disable(&pdev->dev);
 	mdss_mdp_pp_term(&pdev->dev);
 	mdss_mdp_bus_scale_unregister(mdata);
-	if (mdata->mdss_cx_ipeak)
-		cx_ipeak_unregister(mdata->mdss_cx_ipeak);
 	mdss_debugfs_remove(mdata);
 	if (mdata->regulator_notif_register)
 		regulator_unregister_notifier(mdata->fs, &(mdata->gdsc_cb));

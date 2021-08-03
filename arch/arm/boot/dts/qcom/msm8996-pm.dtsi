@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, 2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,7 +14,7 @@
 #include <dt-bindings/msm/pm.h>
 
 &soc {
-	qcom,spm@9a10000 {
+	qcom,spm@9A10000 {
 		compatible = "qcom,spm-v2";
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -327,12 +327,16 @@
 			<0xff 115>, /* mdss_irq */
 			<0xff 126>, /* bam_irq[0] */
 			<0xff 127>, /* blsp1_qup_irq(0) */
-			<0xff 132>, /* blsp1_qup_irq(5) */
+			<0xff 131>, /* blsp1_qup_irq(4) - LGE : CAM_I2C  */
+			<0xff 132>, /* blsp1_qup_irq(5) - LGE : COMMON_I2C */
 			<0xff 133>, /* blsp2_qup_irq(0) */
 			<0xff 134>, /* blsp2_qup_irq(1) */
-			<0xff 135>, /* blsp2_qup_irq(2) */
+			/* <0xff 135>, *//* blsp2_qup_irq(2) */
+			<0xff 135>, /* blsp2_spi_irq(2) - LGE : FINGER_SPI */
+			<0xff 137>, /* blsp2_spi_irq(4) - LGE : TDMB_SPI */
 			<0xff 138>, /* blsp2_qup_irq(5) */
 			<0xff 140>, /* blsp1_uart_irq(1) */
+			<0xff 144>, /* blsp1_uart_irq(5) - LGE : IRRC_UART */
 			<0xff 146>, /* blsp2_uart_irq(1) */
 			<0xff 155>, /* sdcc_irq[0] */
 			<0xff 157>, /* sdc2_irq[0] */
@@ -385,6 +389,7 @@
 			<0xff 270>, /* bam_irq[0] */
 			<0xff 271>, /* bam_irq[0] */
 			<0xff 276>, /* wlan_pci */
+			<0xff 280>, /* LGE mobicore */
 			<0xff 283>, /* pcie20_0_int_pls_err */
 			<0xff 284>, /* pcie20_0_int_aer_legacy */
 			<0xff 286>, /* pcie20_0_int_pls_link_down */
@@ -522,16 +527,18 @@
 			<66  131>,
 			<67  132>, /* PCIe1 */
 			<68  133>,
-			<69  145>;
+			<69  145>,
+			<0xff 21>, /* LGE : TDMB_INT */
+			<0xff 90>; /* LGE :  anx7816(slimport) INT */
 	};
 
-	rpm_msg_ram: memory@200000 {
+	rpm_msg_ram: memory@0x200000 {
 		compatible = "qcom,rpm-msg-ram";
 		reg = <0x200000 0x1000>,
 			<0x290000 0x1000>;
 	};
 
-	rpm_code_ram: rpm-memory@68000 {
+	rpm_code_ram: rpm-memory@0x68000 {
 		compatible = "qcom,rpm-code-ram";
 		reg = <0x68000 0x5000>;
 	};

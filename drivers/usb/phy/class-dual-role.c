@@ -24,6 +24,10 @@
 #include <linux/stat.h>
 #include <linux/types.h>
 
+#if defined(CONFIG_LGE_USB_ANX7418)
+#define DUAL_ROLE_NOTIFICATION_DELAY 1000
+#endif
+
 #define DUAL_ROLE_NOTIFICATION_TIMEOUT 2000
 
 static ssize_t dual_role_store_property(struct device *dev,
@@ -87,13 +91,30 @@ static char *kstrdupcase(const char *str, gfp_t gfp, bool to_upper)
 	return ret;
 }
 
-static void dual_role_changed_work(struct work_struct *work);
+static void dual_role_changed_work(struct work_struct *work)
+{
+#if defined(CONFIG_LGE_USB_ANX7418)
+	struct dual_role_phy_instance *dual_role =
+	    container_of(work, struct dual_role_phy_instance,
+			 changed_work.work);
+#else
+	struct dual_role_phy_instance *dual_role =
+	    container_of(work, struct dual_role_phy_instance,
+			 changed_work);
+#endif
+	kobject_uevent(&dual_role->dev.kobj, KOBJ_CHANGE);
+}
 
 void dual_role_instance_changed(struct dual_role_phy_instance *dual_role)
 {
 	dev_dbg(&dual_role->dev, "%s\n", __func__);
 	pm_wakeup_event(&dual_role->dev, DUAL_ROLE_NOTIFICATION_TIMEOUT);
+#if defined(CONFIG_LGE_USB_ANX7418)
+	cancel_delayed_work_sync(&dual_role->changed_work);
+	schedule_delayed_work(&dual_role->changed_work,
+			msecs_to_jiffies(DUAL_ROLE_NOTIFICATION_DELAY));
 	schedule_work(&dual_role->changed_work);
+#endif
 }
 EXPORT_SYMBOL_GPL(dual_role_instance_changed);
 
@@ -161,7 +182,11 @@ __dual_role_register(struct device *parent,
 	if (rc)
 		goto dev_set_name_failed;
 
+#if defined(CONFIG_LGE_USB_ANX7418)
+	INIT_DELAYED_WORK(&dual_role->changed_work, dual_role_changed_work);
+#else
 	INIT_WORK(&dual_role->changed_work, dual_role_changed_work);
+#endif
 
 	rc = device_init_wakeup(dev, true);
 	if (rc)
@@ -188,7 +213,11 @@ dev_set_name_failed:
 static void dual_role_instance_unregister(struct dual_role_phy_instance
 					  *dual_role)
 {
+#if defined(CONFIG_LGE_USB_ANX7418)
+	cancel_delayed_work_sync(&dual_role->changed_work);
+#else
 	cancel_work_sync(&dual_role->changed_work);
+#endif
 	device_init_wakeup(&dual_role->dev, false);
 	device_unregister(&dual_role->dev);
 }
@@ -660,27 +689,6 @@ out:
 	free_page((unsigned long)prop_buf);
 
 	return ret;
-}
-
-static void dual_role_changed_work(struct work_struct *work)
-{
-	struct dual_role_phy_instance *dual_role =
-	    container_of(work, struct dual_role_phy_instance,
-			 changed_work);
-#ifdef CONFIG_LGE_USB
-	 struct attribute *temp;
-#endif
-
-	dev_dbg(&dual_role->dev, "%s\n", __func__);
-#ifdef CONFIG_LGE_USB
-	temp = __dual_role_attrs[DUAL_ROLE_PROP_MODE];
-	__dual_role_attrs[DUAL_ROLE_PROP_MODE] = __dual_role_attrs[DUAL_ROLE_PROP_MODE+1];
-#endif
-	sysfs_update_group(&dual_role->dev.kobj, &dual_role_attr_group);
-#ifdef CONFIG_LGE_USB
-	__dual_role_attrs[DUAL_ROLE_PROP_MODE] = temp;
-#endif
-	kobject_uevent(&dual_role->dev.kobj, KOBJ_CHANGE);
 }
 
 /******************* Module Init ***********************************/

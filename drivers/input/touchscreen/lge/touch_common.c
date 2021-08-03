@@ -15,6 +15,8 @@
  * GNU General Public License for more details.
  *
  */
+#define TS_MODULE "[common]"
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -41,8 +43,6 @@ void touch_msleep(unsigned int msecs)
 void touch_interrupt_control(struct device *dev, int on_off)
 {
 	struct touch_core_data *ts = to_touch_core(dev);
-
-	TOUCH_TRACE();
 
 	if (on_off) {
 		if (atomic_cmpxchg(&ts->state.irq_enable, 0, 1) == 0) {

@@ -225,6 +225,11 @@ extern int _cond_resched(void);
 			(char)({ signed char __x = (x); __x<0?-__x:__x; }), \
 			((void)0)))))))
 
+#define abs64(x) ({				\
+		s64 __x = (x);			\
+		(__x < 0) ? -__x : __x;		\
+	})
+
 #define __abs_choose_expr(x, type, other) __builtin_choose_expr(	\
 	__builtin_types_compatible_p(typeof(x),   signed type) ||	\
 	__builtin_types_compatible_p(typeof(x), unsigned type),		\

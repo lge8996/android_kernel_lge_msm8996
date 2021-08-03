@@ -26,7 +26,7 @@ void register_dp_notify_node()
 }
 EXPORT_SYMBOL(register_dp_notify_node);
 
-void set_dp_notify_node(int val)
+void tusb422_set_dp_notify_node(int val)
 {
 	int state = 0;
 
@@ -39,4 +39,4 @@ void set_dp_notify_node(int val)
 				dp_notify_sdev.state);
 	}
 }
-EXPORT_SYMBOL(set_dp_notify_node);
+EXPORT_SYMBOL(tusb422_set_dp_notify_node);

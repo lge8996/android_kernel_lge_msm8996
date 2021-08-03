@@ -34,16 +34,17 @@
 #define DMA_TX_TIMEOUT 200
 #define DMA_TPG_FIFO_LEN 64
 
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+extern int panel_not_connected;
+extern int skip_lcd_error_check;
+#endif
+
 #define FIFO_STATUS	0x0C
 #define LANE_STATUS	0xA8
 
 #define MDSS_DSI_INT_CTRL	0x0110
-#define LANE_SWAP_CTRL			0x0B0
-#define LOGICAL_LANE_SWAP_CTRL		0x310
 
-#define MAX_BTA_WAIT_RETRY 5
-
-#define CEIL(x, y)		(((x) + ((y)-1)) / (y))
+#define CEIL(x, y)		(((x) + ((y) - 1)) / (y))
 
 struct mdss_dsi_ctrl_pdata *ctrl_list[DSI_CTRL_MAX];
 
@@ -165,14 +166,7 @@ void mdss_dsi_clk_req(struct mdss_dsi_ctrl_pdata *ctrl,
 
 	MDSS_XLOG(ctrl->ndx, enable, ctrl->mdp_busy, current->pid,
 		client);
-	/*
-	 * ensure that before going into ecg or turning
-	 * off the clocks, cmd_mdp_busy is not true. During a
-	 * race condition, clocks are turned off and so the
-	 * isr for cmd_mdp_busy does not get cleared in hw.
-	 */
-	if (enable == MDSS_DSI_CLK_OFF ||
-		enable == MDSS_DSI_CLK_EARLY_GATE) {
+	if (enable == 0) {
 		/* need wait before disable */
 		mutex_lock(&ctrl->cmd_mutex);
 		mdss_dsi_cmd_mdp_busy(ctrl);
@@ -305,27 +299,23 @@ void mdss_dsi_read_phy_revision(struct mdss_dsi_ctrl_pdata *ctrl)
 		return;
 
 	reg_val = MIPI_INP(ctrl->phy_io.base);
+	if (!reg_val) {
+		/*
+		 * DSI_0_PHY_DSIPHY_REVISION_ID3 for phy 1.0
+		 * reset value = 0x10
+		 * 7:4 Major
+		 * 3:0 Minor
+		 */
+		reg_val = MIPI_INP(ctrl->phy_io.base + 0x20c);
+		reg_val = reg_val >> 4;
+	}
 
-	if (reg_val == DSI_PHY_REV_30)
-		ctrl->shared_data->phy_rev = DSI_PHY_REV_30;
-	else if (reg_val == DSI_PHY_REV_20)
+	if (reg_val == DSI_PHY_REV_20)
 		ctrl->shared_data->phy_rev = DSI_PHY_REV_20;
 	else if (reg_val == DSI_PHY_REV_10)
 		ctrl->shared_data->phy_rev = DSI_PHY_REV_10;
 	else
 		ctrl->shared_data->phy_rev = DSI_PHY_REV_UNKNOWN;
-}
-
-static void mdss_dsi_config_data_lane_swap(struct mdss_dsi_ctrl_pdata *ctrl)
-{
-	if (ctrl->shared_data->hw_rev < MDSS_DSI_HW_REV_200)
-		MIPI_OUTP((ctrl->ctrl_base) + LANE_SWAP_CTRL, ctrl->dlane_swap);
-	else
-		MIPI_OUTP(ctrl->ctrl_base + LOGICAL_LANE_SWAP_CTRL,
-			ctrl->lane_map[DSI_LOGICAL_LANE_0] |
-			ctrl->lane_map[DSI_LOGICAL_LANE_1] << 4 |
-			ctrl->lane_map[DSI_LOGICAL_LANE_2] << 8 |
-			ctrl->lane_map[DSI_LOGICAL_LANE_3] << 12);
 }
 
 void mdss_dsi_host_init(struct mdss_panel_data *pdata)
@@ -425,7 +415,8 @@ void mdss_dsi_host_init(struct mdss_panel_data *pdata)
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0084,
 				data); /* DSI_TRIG_CTRL */
 
-	mdss_dsi_config_data_lane_swap(ctrl_pdata);
+	/* DSI_LAN_SWAP_CTRL */
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x00b0, ctrl_pdata->dlane_swap);
 
 	/* clock out ctrl */
 	data = pinfo->t_clk_post & 0x3f;	/* 6 bits */
@@ -594,13 +585,10 @@ int mdss_dsi_wait_for_lane_idle(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	pr_debug("%s: polling for lanes to be in stop state, mask=0x%08x\n",
 		__func__, stop_state_mask);
-	if (ctrl->shared_data->phy_rev == DSI_PHY_REV_30)
-		rc = mdss_dsi_phy_v3_wait_for_lanes_stop_state(ctrl, &val);
-	else
-		rc = readl_poll_timeout(ctrl->ctrl_base + LANE_STATUS, val,
-			(val & stop_state_mask), sleep_us, timeout_us);
+	rc = readl_poll_timeout(ctrl->ctrl_base + LANE_STATUS, val,
+		(val & stop_state_mask), sleep_us, timeout_us);
 	if (rc) {
-		pr_debug("%s: lanes not in stop state, LANE_STATUS=0x%08x\n",
+		pr_err("%s: lanes not in stop state, LANE_STATUS=0x%08x\n",
 			__func__, val);
 		goto error;
 	}
@@ -609,7 +597,7 @@ error:
 	return rc;
 }
 
-void mdss_dsi_cfg_lane_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
+static void mdss_dsi_cfg_lane_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 						u32 bits, int set)
 {
 	u32 data;
@@ -620,7 +608,6 @@ void mdss_dsi_cfg_lane_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 	else
 		data &= ~bits;
 	MIPI_OUTP(ctrl->ctrl_base + 0x0ac, data);
-	wmb(); /* make sure write happens */
 }
 
 
@@ -785,12 +772,6 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 	u32 loop = 10, u_dly = 200;
 	pr_debug("%s: MDSS DSI CTRL and PHY reset. ctrl-num = %d\n",
 					__func__, ctrl->ndx);
-
-	if (ctrl->panel_mode == DSI_CMD_MODE) {
-		pr_warn("ctl_phy_reset not applicable for cmd mode\n");
-		return;
-	}
-
 	if (event == DSI_EV_DLNx_FIFO_OVERFLOW) {
 		mask = BIT(20); /* clock lane only for overflow recovery */
 	} else if (event == DSI_EV_LP_RX_TIMEOUT) {
@@ -805,6 +786,15 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 		ctrl0 = mdss_dsi_get_ctrl_by_index(DSI_CTRL_0);
 		ctrl1 = mdss_dsi_get_ctrl_by_index(DSI_CTRL_1);
 
+		if (ctrl0->recovery) {
+			rc = ctrl0->recovery->fxn(ctrl0->recovery->data,
+					MDP_INTF_DSI_VIDEO_FIFO_OVERFLOW);
+			if (rc < 0) {
+				pr_debug("%s: Target is in suspend/shutdown\n",
+					__func__);
+				return;
+			}
+		}
 		/*
 		 * Disable PHY contention detection and receive.
 		 * Configure the strength ctrl 1 register.
@@ -878,15 +868,6 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 		MIPI_OUTP(ctrl0->ctrl_base + 0x0ac, ln_ctrl0 & ~mask);
 		MIPI_OUTP(ctrl1->ctrl_base + 0x0ac, ln_ctrl1 & ~mask);
 
-		if (ctrl0->recovery) {
-			rc = ctrl0->recovery->fxn(ctrl0->recovery->data,
-					MDP_INTF_DSI_VIDEO_FIFO_OVERFLOW);
-			if (rc < 0) {
-				pr_debug("%s: Target is in suspend/shutdown\n",
-					__func__);
-				return;
-			}
-		}
 		/* Enable Video mode for DSI controller */
 		MIPI_OUTP(ctrl0->ctrl_base + 0x004, data0);
 		MIPI_OUTP(ctrl1->ctrl_base + 0x004, data1);
@@ -903,6 +884,15 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 		 */
 		udelay(200);
 	} else {
+		if (ctrl->recovery) {
+			rc = ctrl->recovery->fxn(ctrl->recovery->data,
+					MDP_INTF_DSI_VIDEO_FIFO_OVERFLOW);
+			if (rc < 0) {
+				pr_debug("%s: Target is in suspend/shutdown\n",
+					__func__);
+				return;
+			}
+		}
 		/* Disable PHY contention detection and receive */
 		MIPI_OUTP((ctrl->phy_io.base) + 0x0188, 0);
 
@@ -955,15 +945,6 @@ static void mdss_dsi_ctl_phy_reset(struct mdss_dsi_ctrl_pdata *ctrl, u32 event)
 			 __func__, ln0);
 		MIPI_OUTP(ctrl->ctrl_base + 0x0ac, ln_ctrl0 & ~mask);
 
-		if (ctrl->recovery) {
-			rc = ctrl->recovery->fxn(ctrl->recovery->data,
-					MDP_INTF_DSI_VIDEO_FIFO_OVERFLOW);
-			if (rc < 0) {
-				pr_debug("%s: Target is in suspend/shutdown\n",
-					__func__);
-				return;
-			}
-		}
 		/* Enable Video mode for DSI controller */
 		MIPI_OUTP(ctrl->ctrl_base + 0x004, data0);
 		/* Enable PHY contention detection and receiver */
@@ -1140,16 +1121,11 @@ static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 	rc = 1;
 	lenp = ctrl->status_valid_params ?: ctrl->status_cmds_rlen;
 
-	if (!lenp || !ctrl->status_cmds_rlen) {
-		pr_err("invalid dsi read params!\n");
-		return 0;
-	}
-
 	for (i = 0; i < ctrl->status_cmds.cmd_cnt; ++i) {
 		memset(&cmdreq, 0, sizeof(cmdreq));
 		cmdreq.cmds = ctrl->status_cmds.cmds + i;
 		cmdreq.cmds_cnt = 1;
-		cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL | CMD_REQ_RX;
+		cmdreq.flags = CMD_REQ_COMMIT | CMD_REQ_RX;
 		cmdreq.rlen = ctrl->status_cmds_rlen[i];
 		cmdreq.cb = NULL;
 		cmdreq.rbuf = ctrl->status_buf.data;
@@ -1161,8 +1137,6 @@ static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 
 		rc = mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 		if (rc <= 0) {
-			if (!mdss_dsi_sync_wait_enable(ctrl) ||
-				mdss_dsi_sync_wait_trigger(ctrl))
 			pr_err("%s: get status: fail\n", __func__);
 			return rc;
 		}
@@ -1250,15 +1224,6 @@ void mdss_dsi_dsc_config(struct mdss_dsi_ctrl_pdata *ctrl, struct dsc_desc *dsc)
 {
 	u32 data, offset;
 
-	if (!dsc) {
-		if (ctrl->panel_mode == DSI_VIDEO_MODE)
-			offset = MDSS_DSI_VIDEO_COMPRESSION_MODE_CTRL;
-		else
-			offset = MDSS_DSI_COMMAND_COMPRESSION_MODE_CTRL;
-		MIPI_OUTP((ctrl->ctrl_base) + offset, 0);
-		return;
-	}
-
 	if (dsc->pkt_per_line <= 0) {
 		pr_err("%s: Error: pkt_per_line cannot be negative or 0\n",
 			__func__);
@@ -1326,31 +1291,6 @@ void mdss_dsi_set_burst_mode(struct mdss_dsi_ctrl_pdata *ctrl)
 
 }
 
-static void mdss_dsi_split_link_setup(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
-{
-	u32 data = 0;
-	struct mdss_panel_info *pinfo;
-
-	if (!ctrl_pdata)
-		return;
-
-	pinfo = &ctrl_pdata->panel_data.panel_info;
-	if (!pinfo->split_link_enabled)
-		return;
-
-	pr_debug("%s: enable split link\n", __func__);
-
-	data = MIPI_INP((ctrl_pdata->ctrl_base) + 0x330);
-	/* DMA_LINK_SEL */
-	data |= 0x3 << 12;
-	/* MDP0_LINK_SEL */
-	data |= 0x5 << 20;
-	/* EN */
-	data |= 0x1;
-	/* DSI_SPLIT_LINK_CTRL */
-	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x330, data);
-}
-
 static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -1402,6 +1342,8 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 		vsync_period = vspw + vbp + height + dummy_yres + vfp;
 		hsync_period = hspw + hbp + width + dummy_xres + hfp;
 
+		if (ctrl_pdata->timing_db_mode)
+			MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x1e8, 0x1);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x24,
 			((hspw + hbp + width + dummy_xres) << 16 |
 			(hspw + hbp)));
@@ -1415,6 +1357,8 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x30, (hspw << 16));
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x34, 0);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x38, (vspw << 16));
+		if (ctrl_pdata->timing_db_mode)
+			MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x1e4, 0x1);
 	} else {		/* command mode */
 		if (mipi->dst_format == DSI_CMD_DST_FORMAT_RGB888)
 			bpp = 3;
@@ -1468,9 +1412,8 @@ static void mdss_dsi_mode_setup(struct mdss_panel_data *pdata)
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x5C, stream_total);
 	}
 
-	mdss_dsi_dsc_config(ctrl_pdata, dsc);
-
-	mdss_dsi_split_link_setup(ctrl_pdata);
+	if (dsc)	/* compressed */
+		mdss_dsi_dsc_config(ctrl_pdata, dsc);
 }
 
 void mdss_dsi_ctrl_setup(struct mdss_dsi_ctrl_pdata *ctrl)
@@ -1482,93 +1425,6 @@ void mdss_dsi_ctrl_setup(struct mdss_dsi_ctrl_pdata *ctrl)
 	mdss_dsi_mode_setup(pdata);
 	mdss_dsi_host_init(pdata);
 	mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode, pdata);
-}
-
-static int mdss_dsi_wait4video_eng_busy(struct mdss_dsi_ctrl_pdata *ctrl)
-{
-	int ret = 0;
-	u32 v_total = 0, v_blank = 0, sleep_ms = 0, fps = 0;
-	struct mdss_panel_info *pinfo;
-
-	/* for dsi 2.1 and above dma scheduling is used */
-	if ((!ctrl) || (ctrl->panel_mode == DSI_CMD_MODE) ||
-		(ctrl->shared_data->hw_rev > MDSS_DSI_HW_REV_200))
-		return ret;
-
-	pinfo = &ctrl->panel_data.panel_info;
-
-	if (ctrl->ctrl_state & CTRL_STATE_MDP_ACTIVE) {
-		mdss_dsi_wait4video_done(ctrl);
-		v_total = mdss_panel_get_vtotal(pinfo);
-		v_blank = pinfo->lcdc.v_back_porch + pinfo->lcdc.v_pulse_width;
-		if (pinfo->dynamic_fps && pinfo->current_fps)
-			fps = pinfo->current_fps;
-		else
-			fps = pinfo->mipi.frame_rate;
-
-		sleep_ms = CEIL((v_blank * 1000), (v_total * fps)) + 1;
-		/* delay sleep_ms to skip BLLP */
-		if (sleep_ms)
-			udelay(sleep_ms * 1000);
-		ret = 1;
-	}
-
-	return ret;
-}
-
-static void mdss_dsi_schedule_dma_cmd(struct mdss_dsi_ctrl_pdata *ctrl)
-{
-	u32 v_blank, val = 0x0;
-	struct mdss_panel_info *pinfo;
-
-	/* for dsi 2.0 and below dma scheduling is not supported */
-	if ((!ctrl) || (ctrl->panel_mode == DSI_CMD_MODE) ||
-		(ctrl->shared_data->hw_rev < MDSS_DSI_HW_REV_201))
-		return;
-
-	pinfo = &ctrl->panel_data.panel_info;
-	v_blank = pinfo->lcdc.v_back_porch + pinfo->lcdc.v_pulse_width;
-
-	/* DMA_SCHEDULE_CTRL */
-	val = MIPI_INP(ctrl->ctrl_io.base + 0x100);
-	val = val | (1 << 28); /* DMA_SCHEDULE_EN */
-	MIPI_OUTP(ctrl->ctrl_io.base + 0x100, val);
-	val |= (pinfo->yres + v_blank);
-	MIPI_OUTP(ctrl->ctrl_io.base + 0x100, val); /* DMA_SCHEDULE_LINE */
-	wmb();
-
-	pr_debug("%s schedule at line %x", __func__, val);
-	MDSS_XLOG(ctrl->ndx, val);
-}
-
-static void mdss_dsi_wait4active_region(struct mdss_dsi_ctrl_pdata *ctrl)
-{
-	int in_blanking = 0;
-	int retry_count = 0;
-
-	/* for dsi 2.1 and above dma scheduling is used */
-	if ((!ctrl) || (ctrl->panel_mode != DSI_VIDEO_MODE) ||
-		(ctrl->shared_data->hw_rev > MDSS_DSI_HW_REV_200))
-		return;
-
-	while (retry_count != MAX_BTA_WAIT_RETRY) {
-		mdss_dsi_wait4video_eng_busy(ctrl);
-		in_blanking = ctrl->mdp_callback->fxn(
-			ctrl->mdp_callback->data,
-			MDP_INTF_CALLBACK_CHECK_LINE_COUNT);
-
-		if (in_blanking) {
-			pr_debug("%s: not in active region\n", __func__);
-			retry_count++;
-		} else
-			break;
-	};
-
-	if (retry_count == MAX_BTA_WAIT_RETRY)
-		MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl",
-			"dsi0_phy", "dsi1_ctrl", "dsi1_phy",
-			"vbif", "vbif_nrt", "dbg_bus",
-			"vbif_dbg_bus", "dsi_dbg_bus", "panic");
 }
 
 /**
@@ -1611,14 +1467,9 @@ int mdss_dsi_bta_status_check(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 	reinit_completion(&ctrl_pdata->bta_comp);
 	mdss_dsi_enable_irq(ctrl_pdata, DSI_BTA_TERM);
 	spin_unlock_irqrestore(&ctrl_pdata->mdp_lock, flag);
-
-	mdss_dsi_wait4active_region(ctrl_pdata);
-
 	/* mask out overflow errors */
 	if (ignore_underflow)
 		mdss_dsi_set_reg(ctrl_pdata, 0x10c, 0x0f0000, 0x0f0000);
-
-	MDSS_XLOG(ctrl_pdata->ndx, ctrl_pdata->mdp_busy);
 	MIPI_OUTP(ctrl_pdata->ctrl_base + 0x098, 0x01); /* trigger  */
 	wmb();
 
@@ -2032,7 +1883,7 @@ do_send:
 			goto end;
 		}
 
-		mdss_dsi_wait4active_region(ctrl);
+		mdss_dsi_wait4video_eng_busy(ctrl);
 
 		mdss_dsi_enable_irq(ctrl, DSI_CMD_TERM);
 		if (use_dma_tpg)
@@ -2070,7 +1921,7 @@ skip_max_pkt_size:
 			wmb(); /* make sure the RDBK registers are cleared */
 		}
 
-		mdss_dsi_wait4active_region(ctrl);
+		mdss_dsi_wait4video_eng_busy(ctrl);	/* video mode only */
 		mdss_dsi_enable_irq(ctrl, DSI_CMD_TERM);
 		/* transmit read comamnd to client */
 		if (use_dma_tpg)
@@ -2235,13 +2086,8 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	MIPI_OUTP((ctrl->ctrl_base) + 0x04c, len);
 	wmb();
 
-	/* schedule dma cmds at start of blanking region */
-	mdss_dsi_schedule_dma_cmd(ctrl);
-
-	/* DSI_CMD_MODE_DMA_SW_TRIGGER */
 	MIPI_OUTP((ctrl->ctrl_base) + 0x090, 0x01);
 	wmb();
-	MDSS_XLOG(ctrl->dma_addr, len);
 
 	if (ctrl->do_unicast) {
 		/* let cmd_trigger to kickoff later */
@@ -2318,9 +2164,8 @@ static int mdss_dsi_cmd_dma_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 	u32 *lp, *temp, data;
 	int i, j = 0, off, cnt;
 	bool ack_error = false;
-	char reg[16] = {0x0};
+	char reg[16];
 	int repeated_bytes = 0;
-	struct mdss_dsi_ctrl_pdata *mctrl = mdss_dsi_get_other_ctrl(ctrl);
 
 	lp = (u32 *)rp->data;
 	temp = (u32 *)reg;
@@ -2381,11 +2226,7 @@ static int mdss_dsi_cmd_dma_rx(struct mdss_dsi_ctrl_pdata *ctrl,
 	off += ((cnt - 1) * 4);
 
 	for (i = 0; i < cnt; i++) {
-		if (mdss_dsi_sync_wait_trigger(ctrl))
-			data = (u32)MIPI_INP((mctrl->ctrl_base) + off);
-		else
-			data = (u32)MIPI_INP((ctrl->ctrl_base) + off);
-
+		data = (u32)MIPI_INP((ctrl->ctrl_base) + off);
 		/* to network byte order */
 		if (!repeated_bytes)
 			*lp++ = ntohl(data);
@@ -2510,20 +2351,20 @@ void mdss_dsi_wait4video_done(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	/* DSI_INTL_CTRL */
 	data = MIPI_INP((ctrl->ctrl_base) + 0x0110);
+	/* clear previous VIDEO_DONE interrupt first */
 	data &= DSI_INTR_TOTAL_MASK;
-
-	/* clear previous VIDEO_DONE interrupt */
 	MIPI_OUTP((ctrl->ctrl_base) + 0x0110, (data | DSI_INTR_VIDEO_DONE));
-	wmb(); /* ensure interrupt is cleared */
+	wmb(); /* make sure write happened */
 
 	spin_lock_irqsave(&ctrl->mdp_lock, flag);
 	reinit_completion(&ctrl->video_comp);
 	mdss_dsi_enable_irq(ctrl, DSI_VIDEO_TERM);
 	spin_unlock_irqrestore(&ctrl->mdp_lock, flag);
 
+	/* set interrupt enable bit for VIDEO_DONE */
 	data |= DSI_INTR_VIDEO_DONE_MASK;
 	MIPI_OUTP((ctrl->ctrl_base) + 0x0110, data);
-	wmb(); /* ensure interrupt is enabled */
+	wmb(); /* make sure write happened */
 
 	wait_for_completion_timeout(&ctrl->video_comp,
 			msecs_to_jiffies(VSYNC_PERIOD * 4));
@@ -2532,6 +2373,34 @@ void mdss_dsi_wait4video_done(struct mdss_dsi_ctrl_pdata *ctrl)
 	data &= DSI_INTR_TOTAL_MASK;
 	data &= ~DSI_INTR_VIDEO_DONE_MASK;
 	MIPI_OUTP((ctrl->ctrl_base) + 0x0110, data);
+}
+
+static int mdss_dsi_wait4video_eng_busy(struct mdss_dsi_ctrl_pdata *ctrl)
+{
+	int ret = 0;
+	u32 v_total = 0, v_blank = 0, sleep_ms = 0, fps = 0;
+	struct mdss_panel_info *pinfo = &ctrl->panel_data.panel_info;
+
+	if (ctrl->panel_mode == DSI_CMD_MODE)
+		return ret;
+
+	if (ctrl->ctrl_state & CTRL_STATE_MDP_ACTIVE) {
+		mdss_dsi_wait4video_done(ctrl);
+		v_total = mdss_panel_get_vtotal(pinfo);
+		v_blank = pinfo->lcdc.v_back_porch + pinfo->lcdc.v_pulse_width;
+		if (pinfo->dynamic_fps && pinfo->current_fps)
+			fps = pinfo->current_fps;
+		else
+			fps = pinfo->mipi.frame_rate;
+
+		sleep_ms = CEIL((v_blank * 1000), (v_total * fps));
+		/* delay sleep_ms to skip BLLP */
+		if (sleep_ms)
+			usleep_range((sleep_ms * 1000), (sleep_ms * 1000) + 10);
+		ret = 1;
+	}
+
+	return ret;
 }
 
 void mdss_dsi_cmd_mdp_start(struct mdss_dsi_ctrl_pdata *ctrl)
@@ -3086,10 +2955,7 @@ bool mdss_dsi_ack_err_status(struct mdss_dsi_ctrl_pdata *ctrl)
 		 * warning message is ignored.
 		 */
 		if (ctrl->panel_data.panel_info.esd_check_enabled &&
-			((ctrl->status_mode == ESD_BTA) ||
-			 (ctrl->status_mode == ESD_REG) ||
-			 (ctrl->status_mode == ESD_REG_NT35596)) &&
-			 (status & 0x1008000))
+			(ctrl->status_mode == ESD_BTA) && (status & 0x1008000))
 			return false;
 
 		pr_err("%s: status=%x\n", __func__, status);
@@ -3156,6 +3022,19 @@ static bool mdss_dsi_fifo_status(struct mdss_dsi_ctrl_pdata *ctrl)
 		MIPI_OUTP(base + 0x000c, status);
 
 		pr_err("%s: status=%x\n", __func__, status);
+
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+		if(skip_lcd_error_check){
+			ctrl->err_cont.fifo_err_cnt++;
+			return false;
+		}
+#endif
+		/*
+		 * if DSI FIFO overflow is masked,
+		 * do not report overflow error
+		 */
+		if (MIPI_INP(base + 0x10c) & 0xf0000)
+			status = status & 0xaaaaffff;
 
 		/*
 		 * if DSI FIFO overflow is masked,
@@ -3242,7 +3121,7 @@ static void __dsi_error_counter(struct dsi_err_container *err_container)
 		pr_err("%s: panic in WQ as dsi error intrs within:%dms\n",
 				__func__, err_container->err_time_delta);
 		MDSS_XLOG_TOUT_HANDLER_WQ("mdp", "dsi0_ctrl", "dsi0_phy",
-			"dsi1_ctrl", "dsi1_phy", "dsi_dbg_bus", "panic");
+			"dsi1_ctrl", "dsi1_phy");
 	}
 }
 
@@ -3320,10 +3199,8 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 		 * cleared.
 		 */
 		if (ctrl->panel_data.panel_info.esd_check_enabled &&
-			((ctrl->status_mode == ESD_BTA) ||
-			 (ctrl->status_mode == ESD_REG) ||
-			 (ctrl->status_mode == ESD_REG_NT35596)) &&
-			 (ctrl->panel_mode == DSI_VIDEO_MODE)) {
+			(ctrl->status_mode == ESD_BTA) &&
+			(ctrl->panel_mode == DSI_VIDEO_MODE)) {
 			isr &= ~DSI_INTR_ERROR;
 			/* clear only overflow */
 			mdss_dsi_set_reg(ctrl, 0x0c, 0x44440000, 0x44440000);
@@ -3332,7 +3209,6 @@ irqreturn_t mdss_dsi_isr(int irq, void *ptr)
 	}
 
 	if (isr & DSI_INTR_VIDEO_DONE) {
-		MDSS_XLOG(ctrl->ndx, isr, 0x111);
 		spin_lock(&ctrl->mdp_lock);
 		mdss_dsi_disable_irq_nosync(ctrl, DSI_VIDEO_TERM);
 		complete(&ctrl->video_comp);

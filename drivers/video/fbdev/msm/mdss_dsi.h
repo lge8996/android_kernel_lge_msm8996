@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -57,14 +57,45 @@
 #define MDSS_DSI_HW_REV_104             0x10040000      /* 8996   */
 #define MDSS_DSI_HW_REV_104_1           0x10040001      /* 8996   */
 #define MDSS_DSI_HW_REV_104_2           0x10040002      /* 8937   */
-#define MDSS_DSI_HW_REV_200		0x20000000	/* cobalt */
-#define MDSS_DSI_HW_REV_201		0x20010000	/* 660 */
 
 #define MDSS_DSI_HW_REV_STEP_0		0x0
 #define MDSS_DSI_HW_REV_STEP_1		0x1
 #define MDSS_DSI_HW_REV_STEP_2		0x2
 
+#define MDSS_STATUS_TE_WAIT_MAX		3
 #define NONE_PANEL "none"
+
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+#define IPC_LOW	0x5E
+#define IPC_MID	0x9E
+#define IPC_HIGH	0xDE
+#define REG_READ_MIE	0x56
+#define REG_READ_GC_SH	0xF0
+#define REG_READ_SH_VAL 0xF2
+#define REG_READ_CE_VAL 0xF3
+#define SRE_LOW	1
+#define SRE_MID	2
+#define SRE_HIGH	3
+/* 55h */
+#define IE_MASK	0x80
+#define MONO_MASK   0x08
+#define CABC_MASK   0x01
+#define SRE_MASK	0x70
+#define SRE_MASK_LOW	0x40
+#define SRE_MASK_MID	0x50
+#define SRE_MASK_HIGH	0x60
+#define SRE_MASK_BLANK	0x8F
+/* F0h */
+#define SAT_MASK	0x80
+#define SH_MASK	0x02
+#define HUE_MASK 0x40
+#define DG_MASK 0x04
+/* F2h */
+#define SHARPNESS_VALUE	0x24
+/* FBh */
+#define CABC_ON_VALUE	0x06
+#define CABC_OFF_VALUE	0x02
+#endif
 
 enum {		/* mipi dsi panel */
 	DSI_VIDEO_MODE,
@@ -100,6 +131,9 @@ enum dsi_panel_bl_ctrl {
 	BL_PWM,
 	BL_WLED,
 	BL_DCS_CMD,
+#ifdef CONFIG_LGE_DISPLAY_COMMON
+	BL_OTHERS,
+#endif
 	UNKNOWN_CTRL,
 };
 
@@ -126,22 +160,6 @@ enum dsi_lane_map_type {
 	DSI_LANE_MAP_1032,
 	DSI_LANE_MAP_2103,
 	DSI_LANE_MAP_3210,
-};
-
-enum dsi_logical_lane_id {
-	DSI_LOGICAL_LANE_0 = 0,
-	DSI_LOGICAL_LANE_1,
-	DSI_LOGICAL_LANE_2,
-	DSI_LOGICAL_LANE_3,
-	DSI_LOGICAL_LANE_MAX,
-};
-
-enum dsi_physical_lane_id {
-	DSI_PHYSICAL_LANE_INVALID = 0,
-	DSI_PHYSICAL_LANE_0 = BIT(0),
-	DSI_PHYSICAL_LANE_1 = BIT(1),
-	DSI_PHYSICAL_LANE_2 = BIT(2),
-	DSI_PHYSICAL_LANE_3 = BIT(3),
 };
 
 enum dsi_pm_type {
@@ -272,7 +290,6 @@ struct dsi_shared_data {
 
 	/* DSI bus clocks */
 	struct clk *mdp_core_clk;
-	struct clk *mnoc_clk;
 	struct clk *ahb_clk;
 	struct clk *axi_clk;
 	struct clk *mmss_misc_ahb_clk;
@@ -315,8 +332,6 @@ struct mdss_dsi_data {
 	 * mutex, clocks, regulator information, setup information
 	 */
 	struct dsi_shared_data *shared_data;
-	u32 *dbg_bus;
-	int dbg_bus_size;
 };
 
 /*
@@ -361,6 +376,44 @@ struct dsi_panel_timing {
 	char t_clk_post;
 	char t_clk_pre;
 	struct dsi_panel_cmds on_cmds;
+#if defined(CONFIG_LGE_DISPLAY_BL_EXTENDED)
+	struct dsi_panel_cmds display_on_cmds;
+#if defined(CONFIG_LGE_DISPLAY_MFTS_DET_SUPPORTED) && !defined(CONFIG_LGE_DISPLAY_DYN_DSI_MODE_SWITCH)
+	struct dsi_panel_cmds trimming_cmds;
+	struct dsi_panel_cmds cam_cmds;
+	struct dsi_panel_cmds screen_cmds_102v;
+	struct dsi_panel_cmds screen_cmds_129v;
+	struct dsi_panel_cmds screen_cmds_132v;
+#endif
+#endif
+#if defined(CONFIG_LGE_DISPLAY_DYN_DSI_MODE_SWITCH)
+	struct dsi_panel_cmds v_to_c_on_cmds;
+	struct dsi_panel_cmds c_to_v_on_cmds;
+#endif
+#if defined(CONFIG_LGE_ENHANCE_GALLERY_SHARPNESS)
+	struct dsi_panel_cmds sharpness_on_cmds;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+	struct dsi_panel_cmds vcom_cmds;
+#endif
+#if defined(CONFIG_LGE_LCD_DYNAMIC_CABC_MIE_CTRL)
+	struct dsi_panel_cmds ie_on_cmds;
+	struct dsi_panel_cmds ie_off_cmds;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+	struct dsi_panel_cmds display_on_cmds;
+	struct dsi_panel_cmds display_on_and_aod_comds;
+	struct dsi_panel_cmds vgho_vglo_8p8v_cmd;
+	struct dsi_panel_cmds vgho_vglo_11p6v_cmd;
+	int mux_gate_voltage_status;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_LINEAR_GAMMA)
+	struct dsi_panel_cmds linear_gamma_default_cmds;
+	struct dsi_panel_cmds linear_gamma_tuning_cmds;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_DOLBY_MODE)
+	int dolby_status;
+#endif
 	struct dsi_panel_cmds post_panel_on_cmds;
 	struct dsi_panel_cmds switch_cmds;
 };
@@ -417,6 +470,7 @@ struct dsi_err_container {
 #if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
 #include "lge/lge_mdss_dsi.h"
 #endif
+
 struct mdss_dsi_ctrl_pdata {
 	int ndx;	/* panel_num */
 	int (*on) (struct mdss_panel_data *pdata);
@@ -448,7 +502,6 @@ struct mdss_dsi_ctrl_pdata {
 	struct clk *byte_clk_rcg;
 	struct clk *pixel_clk_rcg;
 	struct clk *vco_dummy_clk;
-	struct clk *byte_intf_clk;
 	u8 ctrl_state;
 	int panel_mode;
 	int irq_cnt;
@@ -456,13 +509,12 @@ struct mdss_dsi_ctrl_pdata {
 	int rst_gpio;
 	int disp_en_gpio;
 	int bklt_en_gpio;
-	bool bklt_en_gpio_invert;
-	bool bklt_en_gpio_state;
-	int avdd_en_gpio;
-	bool avdd_en_gpio_invert;
-	int lcd_mode_sel_gpio;
+	int mode_gpio;
+	int intf_mux_gpio;
 	int bklt_ctrl;	/* backlight ctrl */
-	enum dsi_ctrl_op_mode bklt_dcs_op_mode; /* backlight dcs ctrl mode */
+#ifdef CONFIG_LGE_DISPLAY_BL_EXTENDED
+	int bkltex_ctrl;/* backlightex ctrl */
+#endif
 	bool pwm_pmi;
 	int pwm_period;
 	int pwm_pmic_gpio;
@@ -473,20 +525,22 @@ struct mdss_dsi_ctrl_pdata {
 	int clk_lane_cnt;
 	bool dmap_iommu_map;
 	bool dsi_irq_line;
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+	int dsv_ena_gpio;
+#endif
 	bool dcs_cmd_insert;
 	atomic_t te_irq_ready;
+	bool idle;
 
 	bool cmd_sync_wait_broadcast;
 	bool cmd_sync_wait_trigger;
 
 	struct mdss_rect roi;
-	struct mdss_dsi_dual_pu_roi dual_roi;
 	struct pwm_device *pwm_bl;
 	u32 pclk_rate;
 	u32 byte_clk_rate;
 	u32 pclk_rate_bkp;
 	u32 byte_clk_rate_bkp;
-	u32 esc_clk_rate_hz;
 	bool refresh_clk_rate; /* flag to recalculate clk_rate */
 	struct dss_module_power panel_power_data;
 	struct dss_module_power power_data[DSI_MAX_PM]; /* for 8x10 */
@@ -494,15 +548,65 @@ struct mdss_dsi_ctrl_pdata {
 	struct mdss_hw *dsi_hw;
 	struct mdss_intf_recovery *recovery;
 	struct mdss_intf_recovery *mdp_callback;
-	struct mdss_intf_ulp_clamp *clamp_handler;
 
 	struct dsi_panel_cmds on_cmds;
+#if defined(CONFIG_LGE_DISPLAY_BL_EXTENDED)
+	struct dsi_panel_cmds display_on_cmds;
+#if defined(CONFIG_LGE_DISPLAY_MFTS_DET_SUPPORTED) && !defined(CONFIG_LGE_DISPLAY_DYN_DSI_MODE_SWITCH)
+	struct dsi_panel_cmds trimming_cmds;
+	struct dsi_panel_cmds cam_cmds;
+	struct dsi_panel_cmds screen_cmds_102v;
+	struct dsi_panel_cmds screen_cmds_129v;
+	struct dsi_panel_cmds screen_cmds_132v;
+#endif
+#endif
+#if defined(CONFIG_LGE_DISPLAY_DYN_DSI_MODE_SWITCH)
+	struct dsi_panel_cmds v_to_c_on_cmds;
+	struct dsi_panel_cmds c_to_v_on_cmds;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+	struct dsi_panel_cmds vcom_cmds;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+	struct dsi_panel_cmds display_on_cmds;
+	struct dsi_panel_cmds display_on_and_aod_comds;
+	struct dsi_panel_cmds vgho_vglo_8p8v_cmd;
+	struct dsi_panel_cmds vgho_vglo_11p6v_cmd;
+	int mux_gate_voltage_status;
+#endif
+#if defined(CONFIG_LGE_ENHANCE_GALLERY_SHARPNESS)
+	struct dsi_panel_cmds sharpness_on_cmds;
+#endif
+#if defined(CONFIG_LGE_LCD_DYNAMIC_CABC_MIE_CTRL)
+	struct dsi_panel_cmds ie_on_cmds;
+	struct dsi_panel_cmds ie_off_cmds;
+	int ie_on;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_LINEAR_GAMMA)
+	struct dsi_panel_cmds linear_gamma_default_cmds;
+	struct dsi_panel_cmds linear_gamma_tuning_cmds;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_DOLBY_MODE)
+	int dolby_status;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_AOD_WITH_MIPI)
+	struct dsi_panel_cmds watch_rtc_set_cmd;
+	struct dsi_panel_cmds watch_rtc_info_cmd;
+	struct dsi_panel_cmds watch_ctl_cmd;
+	struct dsi_panel_cmds watch_set_cmd;
+	struct dsi_panel_cmds watch_fd_ctl_cmd;
+	struct dsi_panel_cmds watch_font_set_cmd;
+	struct dsi_panel_cmds watch_u2_scr_fad_cmd;
+	struct dsi_panel_cmds watch_font_crc_cmd;
+#endif
 	struct dsi_panel_cmds post_dms_on_cmds;
 	struct dsi_panel_cmds post_panel_on_cmds;
 	struct dsi_panel_cmds off_cmds;
 	struct dsi_panel_cmds lp_on_cmds;
 	struct dsi_panel_cmds lp_off_cmds;
 	struct dsi_panel_cmds status_cmds;
+	struct dsi_panel_cmds idle_on_cmds; /* for lp mode */
+	struct dsi_panel_cmds idle_off_cmds;
 	u32 *status_valid_params;
 	u32 *status_cmds_rlen;
 	u32 *status_value;
@@ -510,6 +614,16 @@ struct mdss_dsi_ctrl_pdata {
 	u32 groups; /* several alternative values to compare */
 	u32 status_error_count;
 	u32 max_status_error_count;
+
+#if defined(CONFIG_LGE_DISPLAY_AOD_SUPPORTED)
+	struct dsi_panel_cmds *aod_cmds;
+#endif
+
+#if defined(CONFIG_LGE_DISPLAY_MARQUEE_SUPPORTED)
+	struct dsi_panel_cmds mq_column_row_cmds;
+	struct dsi_panel_cmds mq_control_cmds;
+	struct dsi_panel_cmds mq_access_cmds;//In order to control mq register by touch f/w, it's to be enabled.
+#endif
 
 	struct dsi_panel_cmds video2cmd;
 	struct dsi_panel_cmds cmd2video;
@@ -522,6 +636,7 @@ struct mdss_dsi_ctrl_pdata {
 	struct completion video_comp;
 	struct completion dynamic_comp;
 	struct completion bta_comp;
+	struct completion te_irq_comp;
 	spinlock_t irq_lock;
 	spinlock_t mdp_lock;
 	int mdp_busy;
@@ -536,17 +651,7 @@ struct mdss_dsi_ctrl_pdata {
 	bool ulps;
 	bool core_power;
 	bool mmss_clamp;
-
-	/*
-	 * Data lane swap (logical to physical lane map):
-	 *     dlane_swap: used for DSI controller versions < 2.0, where
-	 *               dlane_swap is of type enum dsi_lane_map_type
-	 *     lane_map: used for DSI controller versions > 2.0, where
-	 *               lane_map[logical_lane_id] = physical_lane_id
-	 */
-	char dlane_swap;
-	uint8_t lane_map[DSI_LOGICAL_LANE_MAX];
-
+	char dlane_swap;	/* data lane swap */
 	bool is_phyreg_enabled;
 	bool burst_mode_enabled;
 
@@ -580,6 +685,10 @@ struct mdss_dsi_ctrl_pdata {
 
 	struct dsi_err_container err_cont;
 
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
+	struct lge_mdss_dsi_ctrl_pdata lge_extra;
+#endif
+
 	struct kobject *kobj;
 	int fb_node;
 
@@ -594,13 +703,6 @@ struct mdss_dsi_ctrl_pdata {
 	bool update_phy_timing; /* flag to recalculate PHY timings */
 
 	bool phy_power_off;
-#ifdef CONFIG_PXLW_IRIS3_BRIDGE_IC
-	int iris_rst_gpio;
-#endif
-
-#if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
-	struct lge_mdss_dsi_ctrl_pdata lge_extra;
-#endif
 };
 
 struct dsi_status_data {
@@ -643,8 +745,8 @@ void disable_esd_thread(void);
 void mdss_dsi_irq_handler_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 
 void mdss_dsi_set_tx_power_mode(int mode, struct mdss_panel_data *pdata);
-u64 mdss_dsi_calc_bitclk(struct mdss_panel_info *panel_info, int frame_rate);
-u32 mdss_dsi_get_pclk_rate(struct mdss_panel_info *panel_info, u64 clk_rate);
+int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
+			    int frame_rate);
 int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata, bool update_phy);
 int mdss_dsi_link_clk_init(struct platform_device *pdev,
 		      struct mdss_dsi_ctrl_pdata *ctrl_pdata);
@@ -715,14 +817,10 @@ void mdss_dsi_dsc_config(struct mdss_dsi_ctrl_pdata *ctrl,
 	struct dsc_desc *dsc);
 void mdss_dsi_dfps_config_8996(struct mdss_dsi_ctrl_pdata *ctrl);
 void mdss_dsi_set_burst_mode(struct mdss_dsi_ctrl_pdata *ctrl);
-void mdss_dsi_cfg_lane_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
-	u32 bits, int set);
 void mdss_dsi_set_reg(struct mdss_dsi_ctrl_pdata *ctrl, int off,
 	u32 mask, u32 val);
 int mdss_dsi_phy_pll_reset_status(struct mdss_dsi_ctrl_pdata *ctrl);
-int mdss_dsi_check_panel_status(struct mdss_dsi_ctrl_pdata *ctrl, void *arg);
-
-void mdss_dsi_debug_bus_init(struct mdss_dsi_data *sdata);
+int mdss_dsi_panel_power_ctrl(struct mdss_panel_data *pdata, int power_state);
 
 static inline const char *__mdss_dsi_pm_name(enum dsi_pm_type module)
 {
@@ -927,6 +1025,11 @@ static inline bool mdss_dsi_is_panel_on_lp(struct mdss_panel_data *pdata)
 	return mdss_panel_is_power_on_lp(pdata->panel_info.panel_power_state);
 }
 
+static inline bool mdss_dsi_is_panel_on_ulp(struct mdss_panel_data *pdata)
+{
+	return mdss_panel_is_power_on_ulp(pdata->panel_info.panel_power_state);
+}
+
 static inline bool mdss_dsi_ulps_feature_enabled(
 	struct mdss_panel_data *pdata)
 {
@@ -937,34 +1040,6 @@ static inline bool mdss_dsi_cmp_panel_reg(struct dsi_buf status_buf,
 	u32 *status_val, int i)
 {
 	return status_buf.data[i] == status_val[i];
-}
-
-static inline enum dsi_logical_lane_id mdss_dsi_physical_to_logical_lane(
-		struct mdss_dsi_ctrl_pdata *ctrl, enum dsi_physical_lane_id id)
-{
-	int i;
-
-	for (i = DSI_LOGICAL_LANE_0; i < DSI_LOGICAL_LANE_MAX; i++)
-		if (ctrl->lane_map[i] == id)
-			break;
-
-	return i;
-}
-
-static inline enum dsi_physical_lane_id mdss_dsi_logical_to_physical_lane(
-		struct mdss_dsi_ctrl_pdata *ctrl, enum dsi_logical_lane_id id)
-{
-	int i;
-
-	if (id >= DSI_LOGICAL_LANE_MAX)
-		return DSI_PHYSICAL_LANE_INVALID;
-
-	for (i = DSI_LOGICAL_LANE_0; i < DSI_LOGICAL_LANE_MAX; i++) {
-		if (BIT(i) == ctrl->lane_map[id])
-			break;
-	}
-
-	return i;
 }
 
 #endif /* MDSS_DSI_H */

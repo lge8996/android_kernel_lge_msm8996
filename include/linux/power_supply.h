@@ -418,8 +418,12 @@ struct power_supply_desc {
 };
 
 struct power_supply {
+	const char *name;
 	const struct power_supply_desc *desc;
-
+	enum power_supply_type type;
+	enum power_supply_property *properties;
+	size_t num_properties;
+	
 	char **supplied_to;
 	size_t num_supplicants;
 
@@ -427,6 +431,22 @@ struct power_supply {
 	size_t num_supplies;
 	struct device_node *of_node;
 
+	int (*get_property)(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    union power_supply_propval *val);
+	int (*set_property)(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    const union power_supply_propval *val);
+#ifdef CONFIG_LGE_PM_LGE_POWER_CORE
+	int (*get_internal_property)(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    union power_supply_propval *val);
+#endif
+	int (*property_is_writeable)(struct power_supply *psy,
+				     enum power_supply_property psp);
+	void (*external_power_changed)(struct power_supply *psy);
+	void (*set_charged)(struct power_supply *psy);
+	
 	/* Driver private data */
 	void *drv_data;
 
@@ -534,7 +554,28 @@ devm_power_supply_register_no_ws(struct device *parent,
 				 const struct power_supply_config *cfg);
 extern void power_supply_unregister(struct power_supply *psy);
 extern int power_supply_powers(struct power_supply *psy, struct device *dev);
-
+extern int power_supply_set_online(struct power_supply *psy, bool enable);
+extern int power_supply_set_current_limit(struct power_supply *psy, int limit);
+extern int power_supply_set_voltage_limit(struct power_supply *psy, int limit);
+extern int power_supply_set_online(struct power_supply *psy, bool enable);
+extern int power_supply_set_health_state(struct power_supply *psy, int health);
+extern int power_supply_set_present(struct power_supply *psy, bool enable);
+extern int power_supply_set_scope(struct power_supply *psy, int scope);
+extern int power_supply_set_usb_otg(struct power_supply *psy, int otg);
+extern int power_supply_set_charge_type(struct power_supply *psy, int type);
+extern int power_supply_set_supply_type(struct power_supply *psy,
+					enum power_supply_type supply_type);
+extern int power_supply_set_hi_power_state(struct power_supply *psy, int value);
+extern int power_supply_set_low_power_state(struct power_supply *psy,
+							int value);
+extern int power_supply_set_dp_dm(struct power_supply *psy,
+							int value);
+extern int power_supply_is_system_supplied(void);
+#ifdef CONFIG_LGE_PM_LGE_POWER_CORE
+extern int power_supply_do_i_have_property(struct power_supply *psy,
+				enum power_supply_property psp);
+#endif
+extern int power_supply_set_scope(struct power_supply *psy, int scope);
 extern void *power_supply_get_drvdata(struct power_supply *psy);
 /* For APM emulation, think legacy userspace. */
 extern struct class *power_supply_class;

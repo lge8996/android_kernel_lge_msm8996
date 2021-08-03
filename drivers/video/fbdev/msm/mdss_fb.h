@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,6 +23,9 @@
 
 #include "mdss_panel.h"
 #include "mdss_mdp_splash_logo.h"
+#if defined(CONFIG_LGE_DISPLAY_AOD_WITH_MIPI)
+#include "lge/lge_mdss_watch.h"
+#endif
 
 #define MDSS_LPAE_CHECK(phys)	\
 	((sizeof(phys) > sizeof(unsigned long)) ? ((phys >> 32) & 0xFF) : (0))
@@ -232,31 +235,32 @@ struct msm_mdp_interface {
 	int (*configure_panel)(struct msm_fb_data_type *mfd, int mode,
 				int dest_ctrl);
 	int (*input_event_handler)(struct msm_fb_data_type *mfd);
-	void (*footswitch_ctrl)(bool on);
 	int (*pp_release_fnc)(struct msm_fb_data_type *mfd);
 	void (*signal_retire_fence)(struct msm_fb_data_type *mfd,
 					int retire_cnt);
+	bool (*is_twm_en)(void);
 	void *private1;
 };
 
 #define IS_CALIB_MODE_BL(mfd) (((mfd)->calib_mode) & MDSS_CALIB_MODE_BL)
+
 #ifdef CONFIG_LGE_DISPLAY_COMMON
 /* TODO: fix it: using local variable mfd in macro function */
 #define MDSS_BRIGHT_TO_BL(out, v, bl_max, max_bright) do {\
 				out = lge_br_to_bl(mfd, v);\
 				} while (0)
+#if defined(CONFIG_LGE_DISPLAY_BL_EXTENDED) || defined(CONFIG_LGE_DISPLAY_AMBIENT_SUPPORTED)
+/* TODO: fix it: using local variable mfd in macro function */
+#define MDSS_BRIGHT_TO_BL_EX(out, v, bl_max, max_bright) do {\
+				out = lge_br_to_bl_ex(mfd, v);\
+				} while (0)
+#endif
 #else /* qct original */
 #define MDSS_BRIGHT_TO_BL(out, v, bl_max, max_bright) do {\
 				out = (2 * (v) * (bl_max) + max_bright);\
 				do_div(out, 2 * max_bright);\
 				} while (0)
 #endif
-
-#define MDSS_BL_TO_BRIGHT(out, v, bl_max, max_bright) do {\
-				out = (2 * ((v) * (max_bright)) + (bl_max));\
-				do_div(out, 2 * bl_max);\
-				} while (0)
-
 struct mdss_fb_file_info {
 	struct file *file;
 	struct list_head list;
@@ -273,6 +277,15 @@ struct msm_fb_fps_info {
 	ktime_t last_sampled_time_us;
 	u32 measured_fps;
 };
+
+#if defined(CONFIG_LGE_PP_AD_SUPPORTED)
+struct msm_fb_ad_info {
+    int is_ad_on;
+    int user_br_lvl;
+    int ad_weight;
+    int old_ad_br_lvl;
+};
+#endif
 
 struct msm_fb_data_type {
 	u32 key;
@@ -320,19 +333,37 @@ struct msm_fb_data_type {
 	u32 calib_mode_bl;
 	u32 ad_bl_level;
 	u32 bl_level;
-	int bl_extn_level;
 	u32 bl_scale;
+	u32 bl_min_lvl;
 	u32 unset_bl_level;
 	bool allow_bl_update;
 	u32 bl_level_scaled;
-#ifdef CONFIG_LGE_DISPLAY_COMMON
 	u32 br_level_val;
+#if defined(CONFIG_LGE_DISPLAY_BL_EXTENDED) || defined(CONFIG_LGE_DISPLAY_AMBIENT_SUPPORTED)
+	u32 br_lvl_ex;
+	u32 bl_level_ex;
+	u32 unset_bl_level_ex;
+	bool allow_bl_update_ex;
+	u32 bl_level_scaled_ex;
+	bool keep_aod_pending;
 #endif
-	u32 bl_level_usr;
 	struct mutex bl_lock;
 	struct mutex mdss_sysfs_lock;
 	bool ipc_resume;
 
+#if defined(CONFIG_LGE_DISPLAY_AOD_SUPPORTED)
+	struct mutex aod_lock;
+	int bl_isU3_mode;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_COMMON)
+	bool recovery;
+#if defined(CONFIG_LGE_DISPLAY_RECOVERY_ESD)
+	u32 recovery_bl_level;
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_BL_EXTENDED)
+	u32 recovery_bl_level_ex;
+#endif
+#endif
+#endif
 	struct platform_device *pdev;
 
 	u32 mdp_fb_page_protection;
@@ -385,6 +416,26 @@ struct msm_fb_data_type {
 	bool pending_switch;
 	struct mutex switch_lock;
 	struct input_handler *input_handler;
+	#if defined(CONFIG_LGE_PP_AD_SUPPORTED)
+	struct msm_fb_ad_info ad_info;
+	#endif
+#if defined(CONFIG_LGE_DISPLAY_DYN_DSI_MODE_SWITCH)
+	struct mutex mode_switch_lock;
+#endif
+#if defined(CONFIG_LGE_PM_THERMAL_VTS)
+	struct value_sensor *vs_led;
+	struct value_sensor *vs_led_s;
+	struct value_sensor *vs_led_cs;
+#endif
+#if defined(CONFIG_LGE_DISPLAY_AOD_WITH_MIPI)
+	bool need_to_init_watch;
+	bool block_aod_bl;
+	u32 unset_aod_bl;
+	bool ready_to_u2;
+	bool display_off;
+	struct mutex watch_lock;
+	struct watch_data watch;
+#endif
 };
 
 static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)
@@ -404,12 +455,6 @@ static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)
 		add_timer(&mfd->no_update.timer);
 		mutex_unlock(&mfd->no_update.lock);
 	}
-}
-
-/* Function returns true for split link */
-static inline bool is_panel_split_link(struct msm_fb_data_type *mfd)
-{
-	return mfd && mfd->panel_info && mfd->panel_info->split_link_enabled;
 }
 
 /* Function returns true for either any kind of dual display */
@@ -459,7 +504,6 @@ static inline bool mdss_fb_is_power_on_ulp(struct msm_fb_data_type *mfd)
 	return mdss_panel_is_power_on_ulp(mfd->panel_power_state);
 }
 
-
 static inline bool mdss_fb_is_hdmi_primary(struct msm_fb_data_type *mfd)
 {
 	return (mfd && (mfd->index == 0) &&
@@ -494,5 +538,4 @@ void mdss_fb_report_panel_dead(struct msm_fb_data_type *mfd);
 void mdss_panelinfo_to_fb_var(struct mdss_panel_info *pinfo,
 						struct fb_var_screeninfo *var);
 void mdss_fb_calc_fps(struct msm_fb_data_type *mfd);
-void mdss_fb_idle_pc(struct msm_fb_data_type *mfd);
 #endif /* MDSS_FB_H */

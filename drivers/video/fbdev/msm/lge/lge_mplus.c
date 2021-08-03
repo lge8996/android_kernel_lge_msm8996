@@ -211,24 +211,6 @@ static ssize_t screen_tune_set(struct device *dev,
 }
 static DEVICE_ATTR(screen_tune, S_IRUGO|S_IWUSR|S_IWGRP, screen_tune_get, screen_tune_set);
 
-ssize_t ht_lcd_tune_set(struct device *dev,
-               struct device_attribute *attr, const char *buf, size_t len)
-{
-	ssize_t ret = strnlen(buf, PAGE_SIZE);
-	int mode = 0;
-	GET_DATA
-
-	if (ctrl->panel_data.panel_info.cont_splash_enabled) {
-		pr_warn("%s: skip while cont. splash is enabled\n", __func__);
-		return ret;
-	}
-
-	sscanf(buf, "%d", &mode);
-	LGE_DDIC_OP_LOCKED(ctrl, ht_mode_set, &mfd->mdss_sysfs_lock, mode);
-	return ret;
-}
-static DEVICE_ATTR(ht_lcd_tune, S_IWUSR|S_IRUGO, NULL, ht_lcd_tune_set);
-
 
 /* "/sys/class/panel/img_tune/mplus_*" */
 static struct attribute *lge_mdss_imgtune_mplus_attrs[] = {
@@ -244,7 +226,6 @@ static struct attribute *lge_mdss_imgtune_advancedIE_attrs[] = {
 	&dev_attr_screen_mode.attr,
 	&dev_attr_rgb_tune.attr,
 	&dev_attr_screen_tune.attr,
-	&dev_attr_ht_lcd_tune.attr,
 	NULL,
 };
 

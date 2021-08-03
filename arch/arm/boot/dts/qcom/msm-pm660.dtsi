@@ -10,21 +10,19 @@
  * GNU General Public License for more details.
  */
 
-#include <dt-bindings/spmi/spmi.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 
 &spmi_bus {
 	qcom,pm660@0 {
-		compatible ="qcom,spmi-pmic";
-		reg = <0x0 SPMI_USID>;
-		#address-cells = <2>;
-		#size-cells = <0>;
+		spmi-slave-container;
+		reg = <0x0>;
+		#address-cells = <1>;
+		#size-cells = <1>;
 
 		pm660_revid: qcom,revid@100 {
 			compatible = "qcom,qpnp-revid";
 			reg = <0x100 0x100>;
 			qcom,fab-id-valid;
-			qcom,tp-rev-valid;
 		};
 
 		pm660_misc: qcom,misc@900 {
@@ -32,17 +30,16 @@
 			reg = <0x900 0x100>;
 		};
 
-		qcom,power-on@800 {
+		pm660_pon: qcom,power-on@800 {
 			compatible = "qcom,qpnp-power-on";
 			reg = <0x800 0x100>;
-			interrupts = <0x0 0x8 0x0 IRQ_TYPE_NONE>,
-				     <0x0 0x8 0x1 IRQ_TYPE_NONE>,
-				     <0x0 0x8 0x4 IRQ_TYPE_NONE>,
-				     <0x0 0x8 0x5 IRQ_TYPE_NONE>;
+			interrupts = <0x0 0x8 0x0>,
+				     <0x0 0x8 0x1>,
+				     <0x0 0x8 0x4>,
+				     <0x0 0x8 0x5>;
 			interrupt-names = "kpdpwr", "resin",
 					"resin-bark", "kpdpwr-resin-bark";
 			qcom,pon-dbc-delay = <15625>;
-			qcom,kpdpwr-sw-debounce;
 			qcom,system-reset;
 			qcom,store-hard-reset-reason;
 
@@ -69,6 +66,7 @@
 		};
 
 		pm660_gpios: gpios {
+			spmi-dev-container;
 			compatible = "qcom,qpnp-pin";
 			gpio-controller;
 			#gpio-cells = <2>;
@@ -161,6 +159,7 @@
 		};
 
 		pm660_rtc: qcom,pm660_rtc {
+			spmi-dev-container;
 			compatible = "qcom,qpnp-rtc";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -315,36 +314,25 @@
 		};
 
 		pm660_charger: qcom,qpnp-smb2 {
+			spmi-dev-container;
 			compatible = "qcom,qpnp-smb2";
 			#address-cells = <1>;
 			#size-cells = <1>;
 
 			qcom,pmic-revid = <&pm660_revid>;
-
-			io-channels = <&pm660_rradc 8>,
-				      <&pm660_rradc 10>,
-				      <&pm660_rradc 3>,
-				      <&pm660_rradc 4>;
-			io-channel-names = "charger_temp",
-					   "charger_temp_max",
-					   "usbin_i",
-					   "usbin_v";
-
 			qcom,wipower-max-uw = <5000000>;
-			dpdm-supply = <&qusb_phy0>;
 
 			qcom,thermal-mitigation
 					= <3000000 2500000 2000000 1500000
 						1000000 500000>;
-
 			qcom,chgr@1000 {
 				reg = <0x1000 0x100>;
 				interrupts =
-					<0x0 0x10 0x0 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x10 0x1 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x10 0x2 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x10 0x3 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x10 0x4 IRQ_TYPE_EDGE_RISING>;
+					<0x0 0x10 0x0>,
+					<0x0 0x10 0x1>,
+					<0x0 0x10 0x2>,
+					<0x0 0x10 0x3>,
+					<0x0 0x10 0x4>;
 
 				interrupt-names = "chg-error",
 						  "chg-state-change",
@@ -355,10 +343,10 @@
 
 			qcom,otg@1100 {
 				reg = <0x1100 0x100>;
-				interrupts = <0x0 0x11 0x0 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x11 0x1 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x11 0x2 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x11 0x3 IRQ_TYPE_EDGE_BOTH>;
+				interrupts = <0x0 0x11 0x0>,
+					     <0x0 0x11 0x1>,
+					     <0x0 0x11 0x2>,
+					     <0x0 0x11 0x3>;
 
 				interrupt-names = "otg-fail",
 						  "otg-overcurrent",
@@ -369,12 +357,12 @@
 			qcom,bat-if@1200 {
 				reg = <0x1200 0x100>;
 				interrupts =
-					<0x0 0x12 0x0 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x12 0x1 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x12 0x2 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x12 0x3 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x12 0x4 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x12 0x5 IRQ_TYPE_EDGE_BOTH>;
+					<0x0 0x12 0x0>,
+					<0x0 0x12 0x1>,
+					<0x0 0x12 0x2>,
+					<0x0 0x12 0x3>,
+					<0x0 0x12 0x4>,
+					<0x0 0x12 0x5>;
 
 				interrupt-names = "bat-temp",
 						  "bat-ocp",
@@ -387,14 +375,14 @@
 			qcom,usb-chgpth@1300 {
 				reg = <0x1300 0x100>;
 				interrupts =
-					<0x0 0x13 0x0 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x13 0x1 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x13 0x2 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x13 0x3 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x13 0x4 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x13 0x5 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x13 0x6 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x13 0x7 IRQ_TYPE_EDGE_RISING>;
+					<0x0 0x13 0x0>,
+					<0x0 0x13 0x1>,
+					<0x0 0x13 0x2>,
+					<0x0 0x13 0x3>,
+					<0x0 0x13 0x4>,
+					<0x0 0x13 0x5>,
+					<0x0 0x13 0x6>,
+					<0x0 0x13 0x7>;
 
 				interrupt-names = "usbin-collapse",
 						  "usbin-lt-3p6v",
@@ -409,13 +397,13 @@
 			qcom,dc-chgpth@1400 {
 				reg = <0x1400 0x100>;
 				interrupts =
-					<0x0 0x14 0x0 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x14 0x1 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x14 0x2 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x14 0x3 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x14 0x4 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x14 0x5 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x14 0x6 IRQ_TYPE_EDGE_RISING>;
+					<0x0 0x14 0x0>,
+					<0x0 0x14 0x1>,
+					<0x0 0x14 0x2>,
+					<0x0 0x14 0x3>,
+					<0x0 0x14 0x4>,
+					<0x0 0x14 0x5>,
+					<0x0 0x14 0x6>;
 
 				interrupt-names = "dcin-collapse",
 						  "dcin-lt-3p6v",
@@ -429,14 +417,14 @@
 			qcom,chgr-misc@1600 {
 				reg = <0x1600 0x100>;
 				interrupts =
-					<0x0 0x16 0x0 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x16 0x1 IRQ_TYPE_EDGE_RISING>,
-					<0x0 0x16 0x2 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x16 0x3 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x16 0x4 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x16 0x5 IRQ_TYPE_EDGE_BOTH>,
-					<0x0 0x16 0x6 IRQ_TYPE_EDGE_FALLING>,
-					<0x0 0x16 0x7 IRQ_TYPE_EDGE_BOTH>;
+					<0x0 0x16 0x0>,
+					<0x0 0x16 0x1>,
+					<0x0 0x16 0x2>,
+					<0x0 0x16 0x3>,
+					<0x0 0x16 0x4>,
+					<0x0 0x16 0x5>,
+					<0x0 0x16 0x6>,
+					<0x0 0x16 0x7>;
 
 				interrupt-names = "wdog-snarl",
 						  "wdog-bark",
@@ -449,30 +437,78 @@
 			};
 		};
 
-		pm660_pdphy: qcom,usb-pdphy@1700 {
-			compatible = "qcom,qpnp-pdphy";
-			reg = <0x1700 0x100>;
-			vdd-pdphy-supply = <&pm660l_l7>;
-			vbus-supply = <&smb2_vbus>;
-			vconn-supply = <&smb2_vconn>;
-			interrupts = <0x0 0x17 0x0 IRQ_TYPE_EDGE_RISING>,
-				     <0x0 0x17 0x1 IRQ_TYPE_EDGE_RISING>,
-				     <0x0 0x17 0x2 IRQ_TYPE_EDGE_RISING>,
-				     <0x0 0x17 0x3 IRQ_TYPE_EDGE_RISING>,
-				     <0x0 0x17 0x4 IRQ_TYPE_EDGE_RISING>,
-				     <0x0 0x17 0x5 IRQ_TYPE_EDGE_RISING>,
-				     <0x0 0x17 0x6 IRQ_TYPE_EDGE_RISING>;
+		pm660_rradc: rradc@4500 {
+			compatible = "qcom,rradc";
+			reg = <0x4500 0x100>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			#io-channel-cells = <1>;
+			qcom,pmic-revid = <&pm660_revid>;
+		};
 
-			interrupt-names = "sig-tx",
-					  "sig-rx",
-					  "msg-tx",
-					  "msg-rx",
-					  "msg-tx-failed",
-					  "msg-tx-discarded",
-					  "msg-rx-discarded";
+		pm660_fg: qpnp,fg {
+			spmi-dev-container;
+			compatible = "qcom,fg-gen3";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			qcom,pmic-revid = <&pm660_revid>;
+			io-channels = <&pm660_rradc 0>,
+				      <&pm660_rradc 7>;
+			io-channel-names = "rradc_batt_id",
+					   "rradc_die_temp";
+			qcom,rradc-base = <0x4500>;
+			qcom,fg-esr-timer-awake = <96 96>;
+			qcom,fg-esr-timer-asleep = <256 256>;
+			qcom,fg-esr-timer-charging = <0 96>;
+			qcom,cycle-counter-en;
+			status = "okay";
 
-			qcom,default-sink-caps = <5000 3000>, /* 5V @ 3A */
-						 <9000 3000>; /* 9V @ 3A */
+			qcom,fg-batt-soc@4000 {
+				status = "okay";
+				reg = <0x4000 0x100>;
+				interrupts = <0x0 0x40 0x0>,
+					     <0x0 0x40 0x1>,
+					     <0x0 0x40 0x2>,
+					     <0x0 0x40 0x3>,
+					     <0x0 0x40 0x4>,
+					     <0x0 0x40 0x5>,
+					     <0x0 0x40 0x6>,
+					     <0x0 0x40 0x7>;
+				interrupt-names = "soc-update",
+						  "soc-ready",
+						  "bsoc-delta",
+						  "msoc-delta",
+						  "msoc-low",
+						  "msoc-empty",
+						  "msoc-high",
+						  "msoc-full";
+			};
+
+			qcom,fg-batt-info@4100 {
+				status = "okay";
+				reg = <0x4100 0x100>;
+				interrupts = <0x0 0x41 0x0>,
+					     <0x0 0x41 0x1>,
+					     <0x0 0x41 0x2>,
+					     <0x0 0x41 0x3>,
+					     <0x0 0x41 0x6>;
+				interrupt-names = "vbatt-pred-delta",
+						  "vbatt-low",
+						  "esr-delta",
+						  "batt-missing",
+						  "batt-temp-delta";
+			};
+
+			qcom,fg-memif@4400 {
+				status = "okay";
+				reg = <0x4400 0x100>;
+				interrupts = <0x0 0x44 0x0>,
+					     <0x0 0x44 0x1>,
+					     <0x0 0x44 0x2>;
+				interrupt-names = "ima-rdy",
+						  "mem-xcp",
+						  "dma-grant";
+			};
 		};
 
 		pm660_adc_tm: vadc@3400 {
@@ -532,90 +568,18 @@
 			};
 		};
 
-		pm660_rradc: rradc@4500 {
-			compatible = "qcom,rradc";
-			reg = <0x4500 0x100>;
-			#address-cells = <1>;
-			#size-cells = <0>;
-			#io-channel-cells = <1>;
-			qcom,pmic-revid = <&pm660_revid>;
-		};
-
-		pm660_fg: qpnp,fg {
-			compatible = "qcom,fg-gen3";
-			#address-cells = <1>;
-			#size-cells = <1>;
-			qcom,pmic-revid = <&pm660_revid>;
-			io-channels = <&pm660_rradc 0>,
-				      <&pm660_rradc 7>;
-			io-channel-names = "rradc_batt_id",
-					   "rradc_die_temp";
-			qcom,rradc-base = <0x4500>;
-			qcom,fg-esr-timer-awake = <96 96>;
-			qcom,fg-esr-timer-asleep = <256 256>;
-			qcom,fg-esr-timer-charging = <0 96>;
-			qcom,cycle-counter-en;
-			status = "okay";
-
-			qcom,fg-batt-soc@4000 {
-				status = "okay";
-				reg = <0x4000 0x100>;
-				interrupts = <0x0 0x40 0x0 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x40 0x1 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x40 0x2
-							IRQ_TYPE_EDGE_RISING>,
-					     <0x0 0x40 0x3
-							IRQ_TYPE_EDGE_RISING>,
-					     <0x0 0x40 0x4 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x40 0x5
-							IRQ_TYPE_EDGE_RISING>,
-					     <0x0 0x40 0x6 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x40 0x7 IRQ_TYPE_EDGE_BOTH>;
-				interrupt-names = "soc-update",
-						  "soc-ready",
-						  "bsoc-delta",
-						  "msoc-delta",
-						  "msoc-low",
-						  "msoc-empty",
-						  "msoc-high",
-						  "msoc-full";
-			};
-
-			qcom,fg-batt-info@4100 {
-				status = "okay";
-				reg = <0x4100 0x100>;
-				interrupts = <0x0 0x41 0x0 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x41 0x1 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x41 0x2 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x41 0x3 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x41 0x6 IRQ_TYPE_EDGE_BOTH>;
-				interrupt-names = "vbatt-pred-delta",
-						  "vbatt-low",
-						  "esr-delta",
-						  "batt-missing",
-						  "batt-temp-delta";
-			};
-
-			qcom,fg-memif@4400 {
-				status = "okay";
-				reg = <0x4400 0x100>;
-				interrupts = <0x0 0x44 0x0 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x44 0x1 IRQ_TYPE_EDGE_BOTH>,
-					     <0x0 0x44 0x2 IRQ_TYPE_EDGE_BOTH>;
-				interrupt-names = "ima-rdy",
-						  "mem-xcp",
-						  "dma-grant";
-			};
+		pm660_pbs: qcom,pbs@7400 {
+			compatible = "qcom,qpnp-pbs";
+			reg = <0x7400 0x100>;
+			status = "disabled";
 		};
 
 		bcl@4200 {
 			compatible = "qcom,msm-bcl-lmh";
-			reg = <0x4200 0xff>,
-				<0x4300 0xff>;
-			reg-names = "fg_user_adc",
-					"fg_lmh";
-			interrupts = <0x0 0x42 0x0 IRQ_TYPE_NONE>,
-					<0x0 0x42 0x2 IRQ_TYPE_NONE>;
+			reg = <0x4200 0xff>;
+			reg-names = "fg_user_adc";
+			interrupts = <0x0 0x42 0x0>,
+					<0x0 0x42 0x2>;
 			interrupt-names = "bcl-high-ibat-int",
 					"bcl-low-vbat-int";
 			qcom,vbat-polling-delay-ms = <100>;
@@ -624,10 +588,10 @@
 	};
 
 	qcom,pm660@1 {
-		compatible ="qcom,spmi-pmic";
-		reg = <0x1 SPMI_USID>;
-		#address-cells = <2>;
-		#size-cells = <0>;
+		spmi-slave-container;
+		reg = <0x1>;
+		#address-cells = <1>;
+		#size-cells = <1>;
 
 		pm660_haptics: qcom,haptic@c000 {
 			compatible = "qcom,qpnp-haptic";

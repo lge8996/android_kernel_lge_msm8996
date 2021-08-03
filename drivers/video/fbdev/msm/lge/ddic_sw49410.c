@@ -13,6 +13,22 @@
 
 #define BLMAP_HL_MODE_OFFSET 	4
 
+#define NUM_DG_PRESET		10
+#define STEP_GC_PRESET      5
+
+#define LGE_SCREEN_TUNE_OFF 0
+#define LGE_SCREEN_TUNE_ON  1
+#define LGE_SCREEN_TUNE_GAM 2
+#define LGE_SCREEN_TUNE_GAL 3
+#define LGE_SAT_GAM_MODE    3
+#define LGE_SAT_GAL_MODE    5
+
+enum {
+	PRESET_SETP0_OFFSET = 0,
+	PRESET_SETP1_OFFSET = 2,
+	PRESET_SETP2_OFFSET = 5
+};
+
 static char sha_ctrl_values[NUM_SHA_CTRL] = {0x00, 0x0D, 0x1A, 0x30, 0xD2};
 
 static char sc_ctrl_values[NUM_SC_CTRL] = {0x00, 0x0F, 0x08, 0x0C};
@@ -76,14 +92,6 @@ static int mplus_mode_to_dic_mp[LGE_MP_MAX][2] = {
 	{LGE_DIC_MP_NOR, LGE_MODE_SET_1ST}, // LGE_MP_OFF
 };
 
-enum lge_ht_tune_mode {
-	HT_TUNE_MODE_STEP_0 = 0,
-	HT_TUNE_MODE_STEP_1,
-	HT_TUNE_MODE_STEP_2,
-	HT_TUNE_MODE_STEP_3,
-	HT_TUNE_MODE_STEP_4,
-};
-
 static bool use_u2_vs = true;
 module_param(use_u2_vs, bool, S_IRUGO|S_IWUSR|S_IWGRP);
 
@@ -100,7 +108,6 @@ extern int mdss_dsi_clk_ctrl(struct mdss_dsi_ctrl_pdata *ctrl, void *clk_handle,
 		enum mdss_dsi_clk_type clk_type, enum mdss_dsi_clk_state clk_state);
 extern int mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 		char cmd1, void (*fxn)(int), char *rbuf, int len);
-extern bool check_dimming_condition(void);
 
 void identify_revision_sw49410(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -129,11 +136,6 @@ static void mplus_change_blmap_sw49410(struct mdss_dsi_ctrl_pdata *ctrl)
 
 	if (mdss_dsi_is_panel_off(&ctrl->panel_data) || mdss_dsi_is_panel_on_lp(&ctrl->panel_data)) {
 		pr_info("unexpected panel power state while changing blmap\n");
-		return;
-	}
-
-	if(check_dimming_condition()){
-		pr_err("Skip the set backlight for LCD Dimming mode \n");
 		return;
 	}
 
@@ -722,41 +724,6 @@ static int send_u2_cmds_sw49410(struct mdss_dsi_ctrl_pdata *ctrl)
 	return 0;
 }
 
-static void ht_mode_set_sw49410(struct mdss_dsi_ctrl_pdata *ctrl, int mode)
-{
-	if (mdss_dsi_is_panel_off(&ctrl->panel_data)) {
-		pr_info("Panel power is off skip cmd %d\n", mode);
-		return;
-	}
-
-	switch (mode) {
-		case HT_TUNE_MODE_STEP_0:
-			pr_info("HT Tune Mode Step 0\n");
-			lge_send_extra_cmds_by_name(ctrl, "ht-tune-0");
-			break;
-		case HT_TUNE_MODE_STEP_1:
-			pr_info("HT Tune Mode Step 1\n");
-			lge_send_extra_cmds_by_name(ctrl, "ht-tune-1");
-			break;
-		case HT_TUNE_MODE_STEP_2:
-			pr_info("HT Tune Mode Step 2\n");
-			lge_send_extra_cmds_by_name(ctrl, "ht-tune-2");
-			break;
-		case HT_TUNE_MODE_STEP_3:
-			pr_info("HT Tune Mode Step 3\n");
-			lge_send_extra_cmds_by_name(ctrl, "ht-tune-3");
-			break;
-		case HT_TUNE_MODE_STEP_4:
-			pr_info("HT Tune Mode Step 4\n");
-			lge_send_extra_cmds_by_name(ctrl, "ht-tune-4");
-			break;
-		default:
-			pr_info("HT Tune Mode unmatched\n");
-			break;
-	}
-	return;
-}
-
 static struct lge_ddic_ops sw49410_ops = {
 	.op_get_blmap_type = get_blmap_type_sw49410,
 	.op_mplus_change_blmap = mplus_change_blmap_sw49410,
@@ -778,9 +745,6 @@ static struct lge_ddic_ops sw49410_ops = {
 	.op_hl_mode_set  = hl_mode_set_sw49410,
 
 	.op_send_u2_cmds = send_u2_cmds_sw49410,
-
-	.op_ht_mode_set = ht_mode_set_sw49410,
-
 };
 
 struct lge_ddic_ops *get_ddic_ops_sw49410(void)

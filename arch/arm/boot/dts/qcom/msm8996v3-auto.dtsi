@@ -1,4 +1,4 @@
-/* Copyright (c) 2016 - 2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -168,43 +168,65 @@
 		<  624000000  7 >;
 };
 
-&soc {
-	ipa_hw: qcom,ipa@680000 {
-		compatible = "qcom,ipa";
-		reg = <0x680000 0x4effc>,
-			<0x684000 0x26934>;
-		reg-names = "ipa-base", "bam-base";
-		interrupts = <0 333 0>,
-			     <0 432 0>;
-		interrupt-names = "ipa-irq", "bam-irq";
-		qcom,ipa-hw-ver = <5>; /* IPA core version = IPAv2.5 */
-		qcom,ipa-hw-mode = <0>;
-		qcom,ee = <0>;
-		qcom,use-ipa-tethering-bridge;
-		qcom,ipa-bam-remote-mode;
-		qcom,modem-cfg-emb-pipe-flt;
-		clocks = <&clock_gcc clk_ipa_clk>;
-		clock-names = "core_clk";
-		qcom,use-dma-zone;
-		qcom,msm-bus,name = "ipa";
-		qcom,msm-bus,num-cases = <3>;
-		qcom,msm-bus,num-paths = <2>;
-		qcom,msm-bus,vectors-KBps =
-		<90 512 0 0>, <90 585 0 0>,         /* No vote */
-		<90 512 80000 640000>, <90 585 80000 640000>,    /* SVS */
-		<90 512 206000 960000>, <90 585 206000 960000>;    /* PERF */
-		qcom,bus-vector-names = "MIN", "SVS", "PERF";
-	};
-
-	qcom,rmnet-ipa {
-		compatible = "qcom,rmnet-ipa";
-		qcom,rmnet-ipa-ssr;
-		qcom,ipa-loaduC;
-		qcom,ipa-advertise-sg-support;
-	};
-
-	qcom,bcl {
-		status = "disabled";
-	};
+&msm_cpufreq {
+	qcom,cpufreq-table-0 =
+		<  768000 >,
+		<  844800 >,
+		<  902400 >,
+		<  979200 >,
+		< 1056000 >,
+		< 1132800 >,
+		< 1209600 >,
+		< 1286400 >,
+		< 1363200 >,
+		< 1440000 >,
+		< 1516800 >,
+		< 1593600 >;
+	qcom,cpufreq-table-2 =
+		<  825600 >,
+		<  902400 >,
+		<  979200 >,
+		< 1056000 >,
+		< 1132800 >,
+		< 1209600 >,
+		< 1286400 >,
+		< 1363200 >,
+		< 1440000 >,
+		< 1516800 >,
+		< 1593600 >,
+		< 1670400 >,
+		< 1747200 >,
+		< 1824000 >,
+		< 1900800 >,
+		< 1977600 >,
+		< 2054400 >;
 };
 
+&m4m_cache {
+	freq-tbl-khz =
+		<  537600 >,
+		<  614400 >,
+		<  691200 >,
+		<  768000 >,
+		<  844800 >,
+		<  902400 >,
+		<  979200 >,
+		< 1056000 >,
+		< 1132800 >,
+		< 1190400 >,
+		< 1286400 >,
+		< 1363200 >,
+		< 1440000 >,
+		< 1516800 >,
+		< 1593600 >;
+};
+
+&devfreq_cpufreq {
+	mincpubw-cpufreq {
+		cpu-to-dev-map-0 =
+			< 1593600 1525 >;
+		cpu-to-dev-map-2 =
+			< 1977600 1525 >,
+			< 2054400 5195 >;
+	};
+};

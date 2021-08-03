@@ -30,4 +30,7 @@ extern int lge_ddic_ops_init(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 int mdss_panel_parse_blex_settings(struct device_node *np,
 			struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 #endif
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_HT_LCD_TUNE_MODE)
+void ht_tune_mode_set(struct mdss_dsi_ctrl_pdata *ctrl);
+#endif
 #endif

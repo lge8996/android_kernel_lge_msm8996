@@ -690,9 +690,7 @@ static long bt_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			BT_PWR_ERR("slim_dev is null\n");
 			return -EINVAL;
 		}
-		ret = btfm_slim_hw_init(
-			bt_power_pdata->slim_dev->platform_data
-		);
+
 		break;
 	case BT_CMD_PWR_CTRL:
 		pwr_cntrl = (int)arg;
@@ -768,6 +766,7 @@ static void __exit bluetooth_power_exit(void)
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("MSM Bluetooth power control driver");
+MODULE_VERSION("1.40");
 
 module_init(bluetooth_power_init);
 module_exit(bluetooth_power_exit);

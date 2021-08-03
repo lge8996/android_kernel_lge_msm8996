@@ -14,7 +14,11 @@
 
 #ifndef LGE_MDSS_DSI_H
 #define LGE_MDSS_DSI_H
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_FALCON_COMMON)
 #include "lge_mplus.h"
+#else
+#include "lge_lcd.h"
+#endif
 #include "lge_color_manager.h"
 
 #define DEFAULT_LGE_FSC_U3 20000
@@ -51,14 +55,13 @@ struct lge_ddic_ops {
 	int (*op_rgb_tune_set)(struct mdss_dsi_ctrl_pdata *ctrl);
 	int (*op_screen_tune_set)(struct mdss_dsi_ctrl_pdata *ctrl);
 	int (*op_sharpness_set)(struct mdss_dsi_ctrl_pdata *ctrl, int mode);
+	int (*op_sre_set)(struct mdss_dsi_ctrl_pdata *ctrl, int mode);
+	int (*op_dolby_mode_set)(struct mdss_dsi_ctrl_pdata *ctrl, int mode);
 	int (*op_hdr_mode_set)(struct mdss_dsi_ctrl_pdata *ctrl, int mode);
 	int (*op_hl_mode_set)(struct mdss_dsi_ctrl_pdata *ctrl, int mode);
 
 	/* aod */
 	int (*op_send_u2_cmds)(struct mdss_dsi_ctrl_pdata *ctrl);
-
-	/* ht_tune */
-	void (*op_ht_mode_set)(struct mdss_dsi_ctrl_pdata *ctrl, int mode);
 };
 
 struct lge_rect {
@@ -108,8 +111,15 @@ struct lge_mdss_dsi_ctrl_pdata {
 	/* advanced IE */
 	int sharpness;
 	bool sharpness_control;
+	bool dg_control;
+	bool ie_control;
+	int sre_mode;
+	int dolby_mode;
 	int hdr_mode;
 	int hl_mode;
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_HT_LCD_TUNE_MODE)
+	int ht_mode;
+#endif
 	int screen_mode;
 	int screen_tune_status;
 	int sc_sat_step;
@@ -129,9 +139,6 @@ struct lge_mdss_dsi_ctrl_pdata {
 
 	/* ddic ops */
 	struct lge_ddic_ops *ddic_ops;
-
-	/* esc_clk_rate */
-	int esc_clk_rate;
 };
 
 #define LGE_DDIC_OP_CHECK(c, op) (c && c->lge_extra.ddic_ops && c->lge_extra.ddic_ops->op_##op)

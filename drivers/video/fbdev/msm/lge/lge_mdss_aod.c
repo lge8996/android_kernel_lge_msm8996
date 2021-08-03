@@ -22,6 +22,12 @@ extern int mdss_dsi_parse_dcs_cmds(struct device_node *np,
 
 extern void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct dsi_panel_cmds *pcmds, u32 flags);
+#if defined(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+extern void dic_lcd_mode_set(struct mdss_dsi_ctrl_pdata *ctrl);
+#endif
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_HT_LCD_TUNE_MODE)
+extern void ht_tune_mode_set(struct mdss_dsi_ctrl_pdata *ctrl);
+#endif
 
 #if defined(CONFIG_LGE_DISPLAY_AOD_WITH_MIPI)
 extern int lcd_watch_deside_status(struct  msm_fb_data_type *mfd, unsigned int cur_mode, unsigned int next_mode);
@@ -433,10 +439,6 @@ int oem_mdss_aod_cmd_send(struct msm_fb_data_type *mfd, int cmd)
 		ctrl->panel_data.panel_info.aod_cur_mode = AOD_PANEL_MODE_U3_UNBLANK;
 		param = AOD_PANEL_MODE_U3_UNBLANK;
 
-#if defined(CONFIG_LGE_DISPLAY_SRE_MODE)
-		lge_set_sre_cmds(ctrl);
-		mdss_dsi_panel_cmds_send(ctrl, &ctrl->reg_55h_cmds, CMD_REQ_COMMIT);
-#endif
 		/* Need to enable 5V power when U2 unblank -> U3*/
 		ret = msm_dss_enable_vreg(
 				ctrl->panel_power_data.vreg_config,
@@ -482,6 +484,18 @@ int oem_mdss_aod_cmd_send(struct msm_fb_data_type *mfd, int cmd)
 			  MDSS_DSI_ALL_CLKS, MDSS_DSI_CLK_ON);
 	mdss_dsi_panel_cmds_send(ctrl, &ctrl->aod_cmds[cmd_index],
 							CMD_REQ_COMMIT);
+	if(cmd == AOD_CMD_DISABLE)
+	{
+#if defined(CONFIG_LGE_DISPLAY_SRE_MODE)
+		lge_set_sre_cmds(ctrl);
+#endif
+#if defined(CONFIG_LGE_DISPLAY_LUCYE_COMMON)
+		dic_lcd_mode_set(ctrl);
+#endif
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_HT_LCD_TUNE_MODE)
+		ht_tune_mode_set(ctrl);
+#endif
+	}
 	mdss_dsi_clk_ctrl(ctrl, ctrl->dsi_clk_handle,
 				  MDSS_DSI_ALL_CLKS, MDSS_DSI_CLK_OFF);
 

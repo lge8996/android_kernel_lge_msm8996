@@ -15,6 +15,8 @@
  * GNU General Public License for more details.
  *
  */
+#define TS_MODULE "[i2c]"
+
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/i2c.h>
@@ -30,9 +32,6 @@
 int touch_i2c_read(struct i2c_client *client, struct touch_bus_msg *msg)
 {
 	int ret;
-#if defined(CONFIG_LGE_TOUCH_CORE_MTK)
-	int retry = 0;
-#endif
 	struct i2c_msg msgs[] = {
 		{
 			.addr = client->addr,
@@ -58,7 +57,7 @@ int touch_i2c_read(struct i2c_client *client, struct touch_bus_msg *msg)
 
 			if (msgs[0].len >= 8) {
 				msgs[0].addr |= I2C_DMA_FLAG;
-				msgs[0].buf = (u8 *)(long)ts->tx_pa;
+				msgs[0].buf = (u8 *)ts->tx_pa;
 			}
 		}
 
@@ -69,73 +68,31 @@ int touch_i2c_read(struct i2c_client *client, struct touch_bus_msg *msg)
 
 			if (msgs[1].len >= 8) {
 				msgs[1].addr |= I2C_DMA_FLAG;
-				msgs[1].buf = (u8 *)(long)ts->rx_pa;
+				msgs[1].buf = (u8 *)ts->rx_pa;
 			}
 		}
 	}
-#elif defined(CONFIG_MTK_I2C_EXTENSION)
-	{
-		struct touch_core_data *ts =
-			(struct touch_core_data *) i2c_get_clientdata(client);
-		if (ts->tx_pa) {
-			msgs[0].addr &= I2C_MASK_FLAG;
-			msgs[0].timing = 400;
-			msgs[0].ext_flag = client->ext_flag | I2C_ENEXT_FLAG | I2C_DMA_FLAG;
-			msgs[0].buf = (u8 *)(long)ts->tx_pa;
-		}
-		if (ts->rx_pa) {
-			msgs[1].addr &= I2C_MASK_FLAG;
-			msgs[1].timing = 400;
-			msgs[1].ext_flag = client->ext_flag | I2C_ENEXT_FLAG | I2C_DMA_FLAG;
-			msgs[1].buf = (u8 *)(long)ts->rx_pa;
-		}
-	}
 #endif
 
-	if (msg->rx_size > MAX_BUF_SIZE || msg->tx_size > MAX_BUF_SIZE) {
-		TOUCH_E("buffer overflow\n");
-		return -ENOMEM;
-	}
+	ret = i2c_transfer(client->adapter, &msgs[0], 1);
+	ret += i2c_transfer(client->adapter, &msgs[1], 1);
 
-#if defined(CONFIG_LGE_TOUCH_CORE_MTK)
-	do {
-		ret = i2c_transfer(client->adapter, &msgs[0], 1);
-		ret += i2c_transfer(client->adapter, &msgs[1], 1);
-
-		if (ret < 0) {
-			TOUCH_E("touch i2c error! retry [%d] ret = %d\n", retry + 1, ret);
-			touch_msleep(20);
-		} else {
-			break;
-		}
-
-	} while (++retry < 3);
-#elif defined(CONFIG_LGE_TOUCH_CORE_QCT)
-    ret = i2c_transfer(client->adapter, &msgs[0], 1);
-    ret += i2c_transfer(client->adapter, &msgs[1], 1);
-
-    if (ret == ARRAY_SIZE(msgs)) {
-        return 0;
-    } else if (ret < 0) {
-        TOUCH_E("i2c_transfer - errno[%d]\n", ret);
-    } else if (ret != ARRAY_SIZE(msgs)) {
+	if (ret == ARRAY_SIZE(msgs)) {
+		return 0;
+	} else if (ret < 0) {
+		TOUCH_E("i2c_transfer - errno[%d]\n", ret);
+	} else if (ret != ARRAY_SIZE(msgs)) {
         TOUCH_E("i2c_transfer - size[%d] result[%d]\n",
 				(int) ARRAY_SIZE(msgs), ret);
 	} else {
-        TOUCH_E("unknown error [%d]\n", ret);
-    }
-#endif
-
+		TOUCH_E("unknown error [%d]\n", ret);
+	}
 	return ret;
 
 }
 
 int touch_i2c_write(struct i2c_client *client, struct touch_bus_msg *msg)
 {
-	int ret;
-#if defined(CONFIG_LGE_TOUCH_CORE_MTK)
-	int retry = 0;
-#endif
 	struct i2c_msg msgs[] = {
 		{
 			.addr = client->addr,
@@ -156,45 +113,12 @@ int touch_i2c_write(struct i2c_client *client, struct touch_bus_msg *msg)
 
 			if (msgs[0].len >= 8) {
 				msgs[0].addr |= I2C_DMA_FLAG;
-				msgs[0].buf = (u8 *)(long)ts->tx_pa;
+				msgs[0].buf = (u8 *)ts->tx_pa;
 			}
 		}
 	}
-#elif defined(CONFIG_MTK_I2C_EXTENSION)
-	{
-		struct touch_core_data *ts =
-			(struct touch_core_data *) i2c_get_clientdata(client);
-		if (ts->tx_pa) {
-			msgs[0].addr &= I2C_MASK_FLAG;
-			msgs[0].timing = 400;
-			msgs[0].ext_flag = client->ext_flag | I2C_ENEXT_FLAG | I2C_DMA_FLAG;
-			msgs[0].buf = (u8 *)(long)ts->tx_pa;
-		}
-	}
 #endif
-
-	if (msg->tx_size > MAX_BUF_SIZE) {
-		TOUCH_E("buffer overflow\n");
-		return -ENOMEM;
-	}
-
-#if defined(CONFIG_LGE_TOUCH_CORE_MTK)
-	do {
-		ret = i2c_transfer(client->adapter, msgs, 1);
-
-		if (ret < 0) {
-			TOUCH_E("touch i2c error! retry [%d] ret = %d\n", retry + 1, ret);
-			touch_msleep(20);
-		} else {
-			break;
-		}
-
-	} while (++retry < 3);
-#elif defined(CONFIG_LGE_TOUCH_CORE_QCT)
-    ret = i2c_transfer(client->adapter, msgs, 1);
-#endif
-
-	return ret;
+	return i2c_transfer(client->adapter, msgs, 1);
 }
 
 static void touch_i2c_release(struct device *dev)
@@ -230,11 +154,6 @@ static int touch_i2c_probe(struct i2c_client *i2c,
 	TOUCH_I("%s\n, platform ptr = %p\n",
 			__func__, i2c->dev.platform_data);
 
-	if (!info) {
-		TOUCH_E("info is NULL\n");
-		return -ENOMEM;
-	}
-
 	ts = devm_kzalloc(&i2c->dev, sizeof(*ts), GFP_KERNEL);
 
 	if (!ts) {
@@ -246,7 +165,6 @@ static int touch_i2c_probe(struct i2c_client *i2c,
 	ts->dev = &i2c->dev;
 	ts->irq = i2c->irq;
 	ts->driver = info->touch_driver;
-	ts->touch_ic_name = info->hwif->of_match_table->compatible;
 
 	dev_set_drvdata(&i2c->dev, ts);
 
@@ -275,11 +193,6 @@ static int touch_i2c_probe(struct i2c_client *i2c,
 	}
 	TOUCH_I("platform device registered ...\n");
 
-#if defined(CONFIG_SECURE_TOUCH)
-	secure_touch_init(ts);
-	secure_touch_stop(ts, true);
-#endif
-
 	return 0;
 }
 
@@ -296,7 +209,6 @@ static int touch_i2c_pm_suspend(struct device *dev)
 	TOUCH_TRACE();
 
 	atomic_set(&ts->state.pm, DEV_PM_SUSPEND);
-
 	TOUCH_I("%s : DEV_PM_SUSPEND\n", __func__);
 
 	return 0;
@@ -310,10 +222,10 @@ static int touch_i2c_pm_resume(struct device *dev)
 
 	if (atomic_read(&ts->state.pm) == DEV_PM_SUSPEND_IRQ) {
 		atomic_set(&ts->state.pm, DEV_PM_RESUME);
-		TOUCH_I("%s : DEV_PM_RESUME\n", __func__);
+		TOUCH_I("%s : DEV_PM_RESUME0\n", __func__);
 		touch_set_irq_pending(ts->irq);
 		touch_resend_irq(ts->irq);
-		return 0;
+            return 0;
 	}
 
 	atomic_set(&ts->state.pm, DEV_PM_RESUME);
@@ -328,73 +240,13 @@ static const struct dev_pm_ops touch_pm_ops = {
 
 static struct i2c_device_id touch_id[] = {
 	{ LGE_TOUCH_NAME, 0 },
-	{},
 };
-
-#if defined(CONFIG_SECURE_TOUCH)
-static int touch_clk_prepare_enable(struct touch_core_data *ts)
-{
-	int ret;
-
-	ret = clk_prepare_enable(ts->iface_clk);
-	if (ret) {
-		dev_err(ts->pdev->dev.parent,
-				"error on clk_prepare_enable(iface_clk):%d\n", ret);
-		return ret;
-	}
-
-	ret = clk_prepare_enable(ts->core_clk);
-	if (ret) {
-		clk_disable_unprepare(ts->iface_clk);
-		dev_err(ts->pdev->dev.parent,
-				"error clk_prepare_enable(core_clk):%d\n", ret);
-	}
-	return ret;
-}
-
-static void touch_clk_disable_unprepare(struct touch_core_data *ts)
-{
-	clk_disable_unprepare(ts->core_clk);
-	clk_disable_unprepare(ts->iface_clk);
-}
-
-int touch_i2c_get(struct touch_core_data *ts)
-{
-	int retval;
-	struct i2c_client *i2c = to_i2c_client(ts->pdev->dev.parent);
-
-	mutex_lock(&ts->touch_io_ctrl_mutex);
-	retval = pm_runtime_get_sync(i2c->adapter->dev.parent);
-	if (retval >= 0 && ts->core_clk != NULL &&
-			ts->iface_clk != NULL) {
-		retval = touch_clk_prepare_enable(ts);
-		if (retval)
-			pm_runtime_put_sync(i2c->adapter->dev.parent);
-	}
-	mutex_unlock(&ts->touch_io_ctrl_mutex);
-
-	return retval;
-}
-
-void touch_i2c_set(struct touch_core_data *ts)
-{
-	struct i2c_client *i2c = to_i2c_client(ts->pdev->dev.parent);
-
-	mutex_lock(&ts->touch_io_ctrl_mutex);
-	if (ts->core_clk != NULL && ts->iface_clk != NULL)
-		touch_clk_disable_unprepare(ts);
-	pm_runtime_put_sync(i2c->adapter->dev.parent);
-	mutex_unlock(&ts->touch_io_ctrl_mutex);
-}
-#endif
 
 int touch_i2c_device_init(struct touch_hwif *hwif, void *driver)
 {
 	struct touch_bus_info *info;
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
-
-	TOUCH_TRACE();
 
 	if (!info) {
 		TOUCH_E("faied to allocate i2c_driver\n");
@@ -421,8 +273,6 @@ int touch_i2c_device_init(struct touch_hwif *hwif, void *driver)
 void touch_i2c_device_exit(struct touch_hwif *hwif)
 {
 	struct touch_bus_info *info = (struct touch_bus_info *) hwif->info;
-
-	TOUCH_TRACE();
 
 	if (info) {
 		kfree(info);

@@ -10,7 +10,6 @@ choice
 	default FB_MSM_MDP
 
 config FB_MSM_MDP
-	select FB_MSM_MDP_HW
 	bool "MDP HW"
 	---help---
 	  Support for MSM MDP HW revision 2.2
@@ -63,7 +62,6 @@ config FB_MSM_MDSS_WRITEBACK
 
 config FB_MSM_MDSS_HDMI_PANEL
 	depends on FB_MSM_MDSS
-	select MSM_EXT_DISPLAY
 	bool "MDSS HDMI Tx Panel"
 	default n
 	---help---
@@ -78,6 +76,16 @@ config FB_MSM_MDSS_HDMI_MHL_SII8334
 	  Support the HDMI to MHL conversion.
 	  MHL (Mobile High-Definition Link) technology
 	  uses USB connector to output HDMI content
+
+config FB_MSM_MDSS_SPI_PANEL
+	depends on FB_MSM_MDSS
+	bool "Support SPI panel feature"
+	default n
+	---help---
+	The MDSS SPI Panel provides support for transmittimg SPI signals of
+	MDSS frame buffer data to connected panel. Limited by SPI rate, the
+	current max fps only reach to 27 fps, and limited by MDP hardware
+	architecture only supply on MDP3
 
 config FB_MSM_MDSS_MHL3
 	depends on FB_MSM_MDSS_HDMI_PANEL
@@ -97,14 +105,13 @@ config FB_MSM_MDSS_DSI_CTRL_STATUS
 	  fails to acknowledge the BTA command, it sends PANEL_ALIVE=0 status
 	  to HAL layer to reset the controller.
 
-config FB_MSM_MDSS_DP_PANEL
+config FB_MSM_MDSS_EDP_PANEL
 	depends on FB_MSM_MDSS
-	select MSM_EXT_DISPLAY
-	bool "MDSS DP Panel"
+	bool "MDSS eDP Panel"
 	---help---
-	The MDSS DP Panel provides support for DP host controller driver
+	The MDSS eDP Panel provides support for eDP host controller driver
 	which runs in Video mode only and is responsible for transmitting
-	frame buffer from host SOC to DP display panel.
+	frame buffer from host SOC to eDP display panel.
 
 config FB_MSM_MDSS_MDP3
 	depends on FB_MSM_MDSS
@@ -122,13 +129,15 @@ config FB_MSM_MDSS_XLOG_DEBUG
 	driver during fatal errors and enable some display-driver logging
 	into an internal buffer (this avoids logging overhead).
 
-config PXLW_IRIS3_BRIDGE_IC
-	depends on FB_MSM_MDSS
-	bool "Enable pxlw iris3"
+config FB_MSM_MDSS_FRC_DEBUG
+	depends on DEBUG_FS && FB_MSM_MDSS
+	bool "Enable Video FRC debugging"
 	default n
 	---help---
-	  Support for MSM MDP DSI MIPI BRIDGE IC
-	  Say Y here if you used the pxlw iris bridge ic.
+	The MDSS FRC debugging provides support to enable the deterministic
+	frame rate control (FRC) debugging features to: Collect video frame
+	statistics and check whether its output pattern matches expected
+	cadence.
 
 config LGE_DISPLAY_AOD_SUPPORTED
 	bool "Enable AOD function"
@@ -437,5 +446,17 @@ config LGE_FBCN
 	bool "Frame Based Clock Normalizer"
 	---help---
 	This feature provides Frame Based Clock Normalizer scheme.
+
+config LGE_DISPLAY_COLOR_MANAGER
+	bool "Enable LGE_DISPLAY_COLOR_MANAGER"
+	default n
+	---help---
+	Display Color Manager by digital gamma & sat/hue/sharpness
+
+config LGE_DISPLAY_HT_LCD_TUNE_MODE
+	bool "LGE_DISPLAY_HT_LCD_TUNE_MODE"
+	default n
+	---help---
+	if you say yes here you get support for high temperature lcd tune.
 
 endif

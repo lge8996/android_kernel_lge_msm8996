@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, 2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -34,6 +34,8 @@
 #include "dsi-panel-toshiba-720p-video.dtsi"
 #include "dsi-panel-sharp-dsc-4k-cmd.dtsi"
 #include "dsi-panel-jdi-1080p-video.dtsi"
+#include "dsi-panel-truly-1080p-video.dtsi"
+#include "dsi-panel-truly-1080p-cmd.dtsi"
 
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
@@ -47,7 +49,6 @@
 			qcom,supply-max-voltage = <1800000>;
 			qcom,supply-enable-load = <62000>;
 			qcom,supply-disable-load = <80>;
-			qcom,supply-post-on-sleep = <20>;
 		};
 
 		qcom,panel-supply-entry@1 {
@@ -66,7 +67,7 @@
 			qcom,supply-max-voltage = <6000000>;
 			qcom,supply-enable-load = <100000>;
 			qcom,supply-disable-load = <100>;
-			qcom,supply-post-on-sleep = <20>;
+			qcom,supply-post-on-sleep = <10>;
 		};
 	};
 };
@@ -264,6 +265,22 @@
 		23 1f 07 09 05 03 04 a0
 		23 1f 07 09 05 03 04 a0
 		23 19 08 08 05 03 04 a0];
+};
+
+&dsi_truly_1080_vid {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [23 1e 08 09 05 03 04 a0
+		23 1e 08 09 05 03 04 a0
+		23 1e 08 09 05 03 04 a0
+		23 1e 08 09 05 03 04 a0
+		23 1a 08 09 05 03 04 a0];
+};
+
+&dsi_truly_1080_cmd {
+	qcom,mdss-dsi-panel-timings-phy-v2 = [23 1e 08 09 05 03 04 a0
+		23 1e 08 09 05 03 04 a0
+		23 1e 08 09 05 03 04 a0
+		23 1e 08 09 05 03 04 a0
+		23 1a 08 09 05 03 04 a0];
 };
 
 &dsi_sharp_1080_cmd {

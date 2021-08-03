@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -251,7 +251,7 @@ int msm_dsi_irq_init(struct device *dev, int irq_no,
 	msm_dsi_ahb_ctrl(0);
 
 	ret = devm_request_irq(dev, irq_no, msm_dsi_isr_handler,
-				0x0, "DSI", ctrl);
+				IRQF_DISABLED, "DSI", ctrl);
 	if (ret) {
 		pr_err("msm_dsi_irq_init request_irq() failed!\n");
 		return ret;
@@ -1328,7 +1328,7 @@ static int msm_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 	memset(&cmdreq, 0, sizeof(cmdreq));
 	cmdreq.cmds = ctrl->status_cmds.cmds;
 	cmdreq.cmds_cnt = ctrl->status_cmds.cmd_cnt;
-	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL | CMD_REQ_RX;
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_REQ_RX;
 	cmdreq.rlen = 1;
 	cmdreq.cb = NULL;
 	cmdreq.rbuf = ctrl->status_buf.data;

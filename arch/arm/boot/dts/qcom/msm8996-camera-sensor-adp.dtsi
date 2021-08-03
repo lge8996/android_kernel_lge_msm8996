@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, 2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -114,7 +114,7 @@
 		qcom,clock-rates = <19200000 0>;
 	};
 
-	qcom_camera_0: qcom,camera@0 {
+	qcom,camera@0 {
 		cell-index = <0>;
 		compatible = "qcom,camera";
 		reg = <0x0>;
@@ -127,6 +127,8 @@
 		cam_vdig-supply = <&pm8994_s3>;
 		cam_vio-supply = <&pm8994_lvs1>;
 		cam_vana-supply = <&pm8994_l17>;
+		qcom,vdd-cx-supply = <&pm8994_s1_corner>;
+		qcom,vdd-cx-name = "qcom,vdd-cx";
 		qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
 		qcom,cam-vreg-min-voltage = <1300000 0 1800000>;
 		qcom,cam-vreg-max-voltage = <1300000 0 1800000>;
@@ -156,7 +158,7 @@
 		qcom,clock-rates = <24000000 0>;
 	};
 
-	qcom_camera_1: qcom,camera@1 {
+	qcom,camera@1 {
 		cell-index = <1>;
 		compatible = "qcom,camera";
 		reg = <0x1>;
@@ -166,6 +168,8 @@
 		cam_vdig-supply = <&pm8994_l27>;
 		cam_vio-supply = <&pm8994_lvs1>;
 		cam_vana-supply = <&pmi8994_boostbypass>;
+		qcom,vdd-cx-supply = <&pm8994_s1_corner>;
+		qcom,vdd-cx-name = "qcom,vdd-cx";
 		qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
 		qcom,cam-vreg-min-voltage = <800000 0 3150000>;
 		qcom,cam-vreg-max-voltage = <800000 0 3600000>;
@@ -207,6 +211,8 @@
 		cam_vdig-supply = <&pm8994_l27>;
 		cam_vio-supply = <&pm8994_lvs1>;
 		cam_vana-supply = <&pm8994_l29>;
+		qcom,vdd-cx-supply = <&pm8994_s1_corner>;
+		qcom,vdd-cx-name = "qcom,vdd-cx";
 		qcom,cam-vreg-name = "cam_vdig", "cam_vio", "cam_vana";
 		qcom,cam-vreg-min-voltage = <800000 0 2500000>;
 		qcom,cam-vreg-max-voltage = <800000 0 2500000>;

@@ -19,6 +19,6 @@
 #include <linux/switch.h>
 
 void register_dp_notify_node(void);
-void set_dp_notify_node(int val);
+void tusb422_set_dp_notify_node(int val);
 
 #endif /*LGE_MDSS_FB_H */

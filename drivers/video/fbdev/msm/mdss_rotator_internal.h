@@ -15,13 +15,13 @@
 #define MDSS_MDP_ROTATOR_INTERNAL_H
 
 #include <linux/list.h>
+#include <linux/sync.h>
 #include <linux/file.h>
 #include <linux/mdss_rotator.h>
+#include <linux/sw_sync.h>
 #include <linux/mutex.h>
 #include <linux/types.h>
 #include <linux/cdev.h>
-#include <sync.h>
-#include <sw_sync.h>
 
 #include  "mdss_mdp.h"
 

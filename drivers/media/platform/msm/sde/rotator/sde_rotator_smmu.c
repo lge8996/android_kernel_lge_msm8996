@@ -522,7 +522,6 @@ void sde_smmu_device_create(struct device *dev)
 	}
 
 	if (!child_rot_sec || !child_rot_nsec) {
-		mdss_smmu_request_mappings(sde_smmu_callback);
 		mdata->callback_request = true;
 	}
 }

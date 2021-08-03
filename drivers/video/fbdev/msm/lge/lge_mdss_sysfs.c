@@ -16,9 +16,24 @@ static ssize_t mdss_fb_get_panel_type(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
-	GET_DATA
+	int panel_type = lge_get_panel();
 
-	ret = snprintf(buf, PAGE_SIZE, "Unknown LCD TYPE\n");
+	if (panel_type == LGD_SIC_LG49410_1440_3120_INCELL_CMD_PANEL)
+		ret = snprintf(buf, PAGE_SIZE, "LGD - SW49410 1440 X 3120 cmd\n");
+	else if (panel_type == LGD_SIC_LG49410_1080_2340_INCELL_CMD_PANEL)
+		ret = snprintf(buf, PAGE_SIZE, "LGD - SW49410 1080 X 2340 cmd\n");
+	else if (panel_type == LGD_SIC_LG49410_720_1560_INCELL_CMD_PANEL)
+		ret = snprintf(buf, PAGE_SIZE, "LGD - SW49410 720 X 1560 cmd\n");
+	else if (panel_type == LGD_SIC_LG49407_INCELL_CMD_PANEL)
+		ret = snprintf(buf, PAGE_SIZE, "LGD - SW49407 cmd\n");
+	else if (panel_type == LGD_SIC_LG49407_INCELL_VIDEO_PANEL)
+		ret = snprintf(buf, PAGE_SIZE, "LGD - SW49407 video\n");
+	else if (panel_type == LGD_SIC_LG49407_1440_2880_INCELL_VIDEO_PANEL)
+		ret = snprintf(buf, PAGE_SIZE, "LGD - SW49407 1440 X 2880 video\n");
+	else if (panel_type == LGD_SIC_LG49408_1440_2880_INCELL_CMD_PANEL)
+		ret = snprintf(buf, PAGE_SIZE, "LGD - SW49408 1440 X 2880 cmd\n");
+	else
+		ret = snprintf(buf, PAGE_SIZE, "Unknown LCD TYPE\n");
 
 	return ret;
 }
@@ -136,7 +151,7 @@ static ssize_t mdss_fb_set_mq_mode(struct device *dev,
 static DEVICE_ATTR(mq_mode, S_IWUSR|S_IRUGO, mdss_fb_get_mq_mode, mdss_fb_set_mq_mode);
 #endif // CONFIG_LGE_DISPLAY_MARQUEE_SUPPORTED
 
-#if 0//IS_ENABLED(CONFIG_LGE_LCD_MFTS_MODE)
+#if IS_ENABLED(CONFIG_LGE_LCD_MFTS_MODE)
 static ssize_t mdss_get_mfts_auto_touch(struct device *dev,
 		struct device_attribute *attr,
 		char *buf)
@@ -836,7 +851,7 @@ static struct attribute *lge_mdss_fb_attrs[] = {
 #if IS_ENABLED(CONFIG_LGE_DISPLAY_MARQUEE_SUPPORTED)
 	&dev_attr_mq_mode.attr,
 #endif
-#if 0//IS_ENABLED(CONFIG_LGE_LCD_MFTS_MODE)
+#if IS_ENABLED(CONFIG_LGE_LCD_MFTS_MODE)
 	&dev_attr_mfts_auto_touch_test_mode.attr,
 #endif
 #if IS_ENABLED(CONFIG_LGE_THERMAL_BL_MAX)

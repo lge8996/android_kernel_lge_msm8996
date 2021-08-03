@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, 2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,13 +17,13 @@
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/file.h>
+#include <linux/sync.h>
 #include <linux/uaccess.h>
 #include <linux/of.h>
 #include <linux/clk.h>
 #include <linux/msm-bus.h>
 #include <linux/msm-bus-board.h>
 #include <linux/regulator/consumer.h>
-#include <sync.h>
 
 #include "mdss_rotator_internal.h"
 #include "mdss_mdp.h"
@@ -695,7 +695,11 @@ static struct mdss_rot_hw_resource *mdss_rotator_hw_alloc(
 	struct mdss_rot_hw_resource *hw;
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	u32 pipe_ndx, offset = mdss_mdp_get_wb_ctl_support(mdata, true);
+#if IS_ENABLED(CONFIG_LGE_DISPLAY_COMMON)
 	int ret = 0;
+#else
+	int ret;
+#endif
 
 	hw = devm_kzalloc(&mgr->pdev->dev, sizeof(struct mdss_rot_hw_resource),
 		GFP_KERNEL);
@@ -1199,13 +1203,17 @@ static int mdss_rotator_config_dnsc_factor(struct mdss_rot_mgr *mgr,
 		}
 		entry->dnsc_factor_w = src_w / dst_w;
 		bit = fls(entry->dnsc_factor_w);
-		if ((entry->dnsc_factor_w & ~BIT(bit - 1)) || (bit > 5)) {
+		/*
+		 * New Chipsets supports downscale upto 1/64
+		 * change the Bit check from 5 to 7 to support 1/64 down scale
+		 */
+		if ((entry->dnsc_factor_w & ~BIT(bit - 1)) || (bit > 7)) {
 			ret = -EINVAL;
 			goto dnsc_err;
 		}
 		entry->dnsc_factor_h = src_h / dst_h;
 		bit = fls(entry->dnsc_factor_h);
-		if ((entry->dnsc_factor_h & ~BIT(bit - 1)) || (bit > 5)) {
+		if ((entry->dnsc_factor_h & ~BIT(bit - 1)) || (bit > 7)) {
 			ret = -EINVAL;
 			goto dnsc_err;
 		}
@@ -2189,6 +2197,12 @@ static int mdss_rotator_handle_request(struct mdss_rot_mgr *mgr,
 	struct mdss_rot_entry_container *req = NULL;
 	int size, ret;
 	uint32_t req_count;
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+
+	if (mdata->handoff_pending) {
+		pr_err("Rotator request failed. Handoff pending\n");
+		return -EPERM;
+	}
 
 	if (mdss_get_sd_client_cnt()) {
 		pr_err("rot request not permitted during secure display session\n");
@@ -2731,8 +2745,8 @@ static int mdss_rotator_get_dt_vreg_data(struct device *dev,
 			mp->vreg_config[i].vreg_name,
 			mp->vreg_config[i].min_voltage,
 			mp->vreg_config[i].max_voltage,
-			mp->vreg_config[i].enable_load,
-			mp->vreg_config[i].disable_load);
+			mp->vreg_config[i].load[DSS_REG_MODE_ENABLE],
+			mp->vreg_config[i].load[DSS_REG_MODE_DISABLE]);
 	}
 	return rc;
 

@@ -185,3 +185,10 @@ obj-$(CONFIG_BIF)		+= bif/
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 obj-$(CONFIG_ESOC)              += esoc/
 obj-$(CONFIG_TEE)		+= tee/
+
+#immersion tsp3000
+obj-$(CONFIG_TSPDRV) += tspdrv/
+
+# Broadcom V4L2 solution
+#obj-$(CONFIG_BRCM_V4L2)         += brcm_v4l2/
+obj-y                           += brcm_v4l2/
